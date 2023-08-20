@@ -1,0 +1,116 @@
+---
+title: "osmFISH Mouse SS Cortex"
+output: pdf_document
+date: "2023-08-04"
+---
+## creat data set
+```{r}
+sfs <-  OB_centroids_coord
+plot(x= sfs[,2],y= sfs[,3], pch=19,cex = 0.5)
+
+```
+
+##from gitto
+```{r}
+# Ensure Giotto Suite is installed.
+if(!"devtools" %in% installed.packages()) {
+  install.packages("devtools")
+}
+
+devtools::install_github("drieslab/Giotto@suite")
+
+
+
+library(Giotto)
+# Ensure GiottoData, a small, helper module for tutorials, is installed.
+if(!"GiottoData" %in% installed.packages()) {
+  devtools::install_github("drieslab/GiottoData")
+}
+
+# Ensure the Python environment for Giotto has been installed.
+genv_exists = checkGiottoEnvironment()
+if(!genv_exists){
+  # The following command need only be run once to install the Giotto environment.
+  installGiottoEnvironment()
+}
+
+```
+
+
+
+
+
+```{r}
+library(Giotto)
+library(GiottoData)
+
+# 1. set working directory
+results_folder = 'path/to/result'
+
+# Optional: Specify a path to a Python executable within a conda or miniconda
+# environment. If set to NULL (default), the Python executable within the previously
+# installed Giotto environment will be used.
+my_python_path = "local/python/path/python" # alternatively, "/local/python/path/python" if desired.
+
+# download data to working directory ####
+# if wget is installed, set method = 'wget'
+# if you run into authentication issues with wget, then add " extra = '--no-check-certificate' "
+getSpatialDataset(dataset = 'osmfish_SS_cortex', directory = results_folder, method = 'wget')
+```
+
+
+
+```{r}
+
+## instructions allow us to automatically save all plots into a chosen results folder
+instrs = createGiottoInstructions(save_plot = TRUE,
+                                  show_plot = FALSE,
+                                  save_dir = results_folder,
+                                  python_path = my_python_path)
+
+expr_path = paste0(results_folder, "/","osmFISH_prep_expression.txt")
+loc_path = paste0(results_folder, "/","osmFISH_prep_cell_coordinates.txt")
+meta_path = paste0(results_folder, "/","osmFISH_prep_cell_metadata.txt")
+
+```
+
+
+
+```{r}
+## create
+osm_test <- createGiottoObject(expression = expr_path,
+                              spatial_locs = loc_path,
+                              instructions = instrs)
+
+## add field annotation
+metadata = data.table::fread(file = meta_path)
+osm_test = addCellMetadata(osm_test, new_metadata = metadata,
+                           by_column = T, column_cell_ID = 'CellID')
+## filter
+osm_test <- filterGiotto(gobject = osm_test,
+                         expression_threshold = 1,
+                         feat_det_in_min_cells = 10,
+                         min_det_feats_per_cell = 10,
+                         expression_values = c('raw'),
+                         verbose = T)
+
+## normalize Giotto
+## there are two ways for osmFISH object
+
+# 1. standard z-score way
+osm_test <- normalizeGiotto(gobject = osm_test)
+
+# 2. osmFISH way
+raw_expr_matrix = get_expression_values(osm_test, values = "raw")
+norm_genes = (raw_expr_matrix/Giotto:::rowSums_flex(raw_expr_matrix)) * nrow(raw_expr_matrix)
+
+norm_genes_cells = Giotto:::t_flex((Giotto:::t_flex(norm_genes)/Giotto:::colSums_flex(norm_genes)) * ncol(raw_expr_matrix))
+osm_test = set_expression_values(osm_test, values = norm_genes_cells , name = "custom")
+
+## add gene & cell statistics
+osm_test <- addStatistics(gobject = osm_test)
+
+# save according to giotto instructions
+spatPlot2D(gobject = osm_test, cell_color = 'ClusterName', point_size = 1.5,
+         save_param = list(save_name = '2_a_original_clusters'))
+```

@@ -1,0 +1,269 @@
+---
+title: "model5_O_NR"
+output: html_document
+date: "2023-08-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(parallel)
+```
+
+
+
+##objective function
+```{r}
+  #function for beta0 and beta1
+obj = df
+lr=lr_example
+
+ds_matrix <- build_dataset(obj, lr)[,c(1,2)]
+
+receiver <- obj$meta$cell_type[as.numeric(rownames(lr))[1]]
+sender <- obj$meta$cell_type[na.omit(as.numeric(lr))[1]]
+
+Y <- as.matrix(ds_matrix[,1],ncol = 1)
+X <- as.matrix(ds_matrix[,2],ncol = 1)
+X_0 <- as.matrix(rep(1, nrow(ds_matrix)),ncol = 1)
+
+X<- cbind(X_0, X, X)
+
+Dis <- as.matrix(obj$para$dist[obj$meta$cell_type == receiver, obj$meta$cell_type == receiver])
+```
+
+
+
+```{r}
+
+model5 <- function(beta,
+                   tau = 1,
+                  sigma = 1,
+                   phi = 1,
+                   lambda1 = 0.0001,
+                   lambda2 = 0.0001) {
+  
+       int = beta[1]
+       beta_0 = beta[2]
+       beta_1 = as.vector(beta[-c(1,2)])
+       beta_new <- as.matrix(cbind(rep(int, length(beta_1)), rep(beta_0, length(beta_1)), beta_1))
+       residuals = Y  - matrix(rowSums(X * beta_new), ncol = 1)
+       
+       
+      # Calculate the squared sum of residuals
+      L <- 1/(2*tau*ncol(Y))*tau * sum(residuals^2) 
+     
+      # Calculate the penalty terms
+      R1 <- lambda1 * sum(abs(beta))
+      
+      # Calculate the penalty term R2
+
+     weight <- exp(- phi * Dis)
+     
+      G <- sigma*weight
+ 
+      
+      beta_1 <-  as.matrix(beta_1)
+   
+
+      R2 = as.numeric(lambda2 /2*( t(beta_1) %*% G %*% beta_1))
+
+      objective_value <- L + R1 + R2
+
+      
+      return(objective_value)
+}
+    
+
+
+
+```
+
+
+##chat version
+```{r}
+objective_function <- function(beta,
+                               Y,
+                               X,
+                               tau = 1,
+                               sigma = 1,
+                               phi = 1,
+                               lambda1 = 0.001,
+                               lambda2 = 0.00001) {
+  obj1 <- as.matrix(beta, ncol = 1)
+  int <- obj1[1]
+  beta_0 <- obj1[2]
+  beta_1 <- as.vector(obj1[-c(1, 2)])
+  beta_new <- as.matrix(cbind(rep(int, length(beta_1)), rep(beta_0, length(beta_1)), beta_1))
+  residuals <- Y - matrix(rowSums(X * beta_new), ncol = 1)
+
+  # Calculate the squared sum of residuals
+  L <- 1/tau * sum(residuals^2) 
+
+  # Calculate the penalty terms
+  R1 <- lambda1 * sum(abs(beta))
+
+  # Calculate the penalty term R2
+  Dis <- as.matrix(obj$para$dist[obj$meta$cell_type == receiver, obj$meta$cell_type == receiver])
+  weight <- exp(-phi * Dis)
+  G <- sigma * weight
+  beta_1 <- as.matrix(beta_1)
+  R2 <- as.numeric(lambda2 * (t(beta_1) %*% G %*% beta_1))
+
+  objective_value <- L + R1 + R2
+  return(objective_value)
+}
+
+
+
+
+```
+
+
+
+
+## Optimization method(newton_raphson)
+```{r}
+
+newton_raphson <- function(object, 
+                           initial_params, 
+                           tol = 1e-6, 
+                           max_iter = 40) {
+  
+  iter <- 0
+  params <- initial_params
+  
+  while (iter < max_iter) {
+    
+    grad <- numDeriv::grad(object, params)
+    hessian <- numDeriv::hessian(object, params)
+
+    params <- params - solve(hessian) %*% grad
+    
+
+    if (max(abs(grad)) < tol) {
+      break
+    }
+    
+    
+    iter <- iter + 1
+   cat("iter :", iter, "\n")
+  }
+  
+  return(params)
+}
+
+
+```
+
+
+##speed up
+```{r}
+
+
+newton_raphson <- function(objective_function, 
+                           initial_params, 
+                           tol = 1e-6, 
+                           max_iter = 100) {
+  
+  # Precompute constant calculations outside the loop
+  grad_fn <- function(params) {
+    grad <- numDeriv::grad(objective_function, params)
+    grad
+  }
+  
+  hess_fn <- function(params) {
+    hessian <- numDeriv::hessian(objective_function, params)
+    hessian
+  }
+  
+  iter <- 0
+  params <- initial_params
+  
+  # Use BFGS method for optimization with multicore parallelism
+  num_cores <- detectCores()
+  
+  while (iter < max_iter) {
+    # Calculate the gradient and Hessian using multicore parallelism
+    grad_hess <- mclapply(list(grad_fn, hess_fn), function(fn) fn(params), mc.cores = num_cores)
+    grad <- unlist(grad_hess[[1]])
+    hessian <- unlist(grad_hess[[2]])
+    
+    # Update the parameters using the Newton-Raphson update rule
+    params <- params - solve(matrix(hessian, ncol = length(params))) %*% grad
+    
+    # Check convergence
+    if (max(abs(grad)) < tol) {
+      break
+    }
+    iter <- iter + 1
+  }
+  
+  return(params)
+}
+
+
+
+
+```
+
+
+##test:
+
+```{r}
+
+initial_params <- matrix(rep(0, length(Y) + 2), ncol = 1)
+
+
+
+result5 <- newton_raphson(model5, initial_params)
+
+
+```
+
+
+
+##test
+
+```{r}
+
+initial_params <- matrix(rep(0, length(Y)  + 2), ncol = 1)
+result5 <- newton_raphson(objective_function, initial_params)
+
+
+```
+
+
+
+
+## plot
+```{r}
+data_all5<- vector("list",2)
+#color
+data5_1 <- result5[-c(1,2)]
+
+#location
+data_1 <- as.matrix(ds_example[,c(ncol(ds_example)-1, ncol(ds_example))],ncol = ncol(ds_example)-2)
+data_all5[[1]] <- data.frame(x =data_1[,1], y = data_1[,2], color = data5_1 )
+
+#middle
+data_all5[[2]] <- result5[2]
+
+plot_result(data_all5, data_lig,data_els)
+
+
+
+
+```
+
+
+
+
+## test
+```{r}
+grad1 <- numDeriv::grad(model5, initial_params)
+
+
+
+```
+
+

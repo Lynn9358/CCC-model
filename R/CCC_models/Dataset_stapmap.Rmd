@@ -1,0 +1,116 @@
+---
+title: "Dataset_starmap"
+output: pdf_document
+date: "2023-08-08"
+---
+
+```{r setup, include=FALSE}
+library(spdep)
+library(glmnet)
+library(RColorBrewer)
+library('spBayes')
+library(ggplot2)
+library(optimx)
+```
+
+
+#prepare data
+```{r}
+data <- obj@meta$rawmeta
+
+x <- data[colnames(data) == "x"]
+y <- data[colnames(data) == "y"]
+locat <- data.frame(x = x, y = y)
+
+ct <- as.vector(data[colnames(data) == "celltype"])$celltype
+ct_index <- as.vector(unique(ct))
+color <- match(ct,ct_index)
+
+```
+
+#creat dataset
+```{r}
+df_star <- list()
+df_star$meta <- list()
+df_star$meta$cell <- c(1:nrow(data))
+
+df_star$meta$x <- x$x
+df_star$meta$y <- y$y
+
+df_star$meta$locat <- locat
+df_star$meta$cell_type<- ct
+df_star$para$dist <- obj@dist
+
+df_star$meta$gene <- cbind( Cort = obj@data$rawndata[rownames(obj@data$rawndata) == "Cort"],Sstr2 =obj@data$rawndata[rownames(obj@data$rawndata) == "Sstr2"],S100a10 =obj@data$rawndata[rownames(obj@data$rawndata) == "S100a10"],Trpv6 =obj@data$rawndata[rownames(obj@data$rawndata) == "Trpv6"])
+
+ 
+colnames(df_star$para$dist) <- c(1:ncol(df_star$para$dist))
+rownames(df_star$para$dist) <- c(1:nrow(df_star$para$dist))
+
+
+
+
+
+```
+
+# plot dataset
+```{r}
+
+plot(locat, pch = 19, cex = 0.5, col = color)
+
+
+plot(locat, pch = 19, cex = 0.5, col = ifelse(ct %in% c("Astro", "eL5"), color, "grey"))
+
+```
+
+#Find neighbours 
+```{r}
+star_example <- get_lr_wknn(df_star,
+            sender = 'eL5',
+            receiver = "Astro",
+            k = 2)
+
+star_lr_index <- create_lr_index(star_example)
+
+plot_lr_pair(df_star, star_example)
+
+```
+
+
+#dataset generation
+```{r}
+ds_example1 <- build_dataset(df_star, star_example,"Trpv6" ,"S100a10")
+
+ds_coefficients1 <- SVC_model4(df_star, star_example, "Trpv6" ,"S100a10",
+                               lambda1 = 0.0001,
+                               lambda2 = 0.0001)
+
+
+
+```
+
+## plot the result
+```{r}
+
+
+result_plot(ds_example,df_star,ds_coefficients1, 'Astro', 'eL5')
+
+
+
+```
+
+
+#dataset generation
+```{r}
+ds_example2 <- build_dataset(df_star, star_example,"Cort" ,"Cort")
+
+ds_coefficients2 <- SVC_model4(df_star, star_example, "Cort" ,"Cort",
+                               lambda1 = 0.0001,
+                               lambda2 = 0.0001)
+```
+
+```{r}
+result_plot(ds_example2,df_star,ds_coefficients2, 'Astro', 'eL5')
+```
+
+

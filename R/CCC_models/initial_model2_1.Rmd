@@ -1,0 +1,511 @@
+---
+title: "initial_model2"
+output: pdf_document
+date: "2023-07-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(spdep)
+library(glmnet)
+library(RColorBrewer)
+```
+
+
+
+# Null simulation data generating
+```{r}
+set.seed("123")
+df <- list()
+df$meta <- list()
+df$meta$cell <- c(1:500)
+df$meta$x <- runif(500, min = 0, max = 100)
+df$meta$y <- runif(500, min = 0, max = 100)
+df$meta$gene1 <- runif(500, min = 0, max = 1)
+df$meta$gene2 <- runif(500, min = 0, max = 1)
+df$meta$gene3 <- runif(500, min = 0, max = 1)
+df$meta$gene4 <- runif(500, min = 0, max = 1)
+df$meta$locat <- data.frame(df$meta$x,df$meta$y)
+df$para$dist <- as.matrix(dist(df$meta$locat))
+
+```
+## cell type decomposing
+```{r}
+df$meta$cell_type<- sample(1:4, length(df$meta$cell), replace = TRUE)
+```
+## plot different cell
+```{r}
+plot(df$meta$locat, pch=19,cex = 0.5, col = as.numeric(df$meta$cell_type))
+plot(df$meta$locat, pch=19,cex = 0.5, col = ifelse(df$meta$cell_type %in% c(3,4), "grey", df$meta$cell_type))
+table(df$meta$cell_type)
+```
+
+
+
+# Finding Neighbour
+## Weight KNN
+```{r}
+## Weighted K-NN for lr pairs
+
+get_lr_wknn <- function(obj,sender,receiver, k){
+  
+  if(!all(c(sender, receiver)) %in% unique(obj$meta$cell_type)) {
+    stop("Can not find sender/receiver in the data")}
+  else {
+    
+    #distance matrix
+    distance <- obj$para$dist[obj$meta$cell_type == sender, obj$meta$cell_type == receiver]
+    receiver <- list()
+    
+    #the indix of receiver
+   receiver$indices <- as.matrix(t(head(apply(distance, 1, function(x) as.numeric(colnames(distance)[order(x,decreasing = FALSE)])),k)))
+    
+   #the distances of receiver from sender
+    receiver$distances <- t(head(apply(distance, 1, function(x) sort(x, decreasing = FALSE)), k))
+    
+    weighted_counts <- receiver$distances * matrix( 1 , nrow = nrow(receiver$distances), ncol = ncol(receiver$distances), byrow = TRUE)
+    
+    percentile_weight <- head(sort(weighted_counts), length(weighted_counts) * 0.5)
+    index_wknn <- t(apply(weighted_counts, 1 , function(x) x %in% percentile_weight))
+    
+     lr_wknn  <- receiver$indices * index_wknn
+     lr_wknn[lr_wknn == 0 ] <- NA
+    
+    return(lr_wknn)
+  }
+}
+  
+  
+lr_example <- get_lr_wknn(df,
+            sender = 1,
+            receiver = 2,
+            k = 4)
+
+lr_example
+```
+
+## create lr index 
+```{r}
+ create_lr_index <- function(lrpair, Nopairadd = TRUE ){
+   if(Nopairadd) {
+    lrpair[,1]<- ifelse(is.na(lrpair[,1]), "0",lrpair[,1] )
+   }
+   
+    A = rep(row.names(lrpair), each = ncol(lrpair))
+    B = as.vector(t(lrpair))
+    lr_index <- cbind(A,B)
+    
+    lr_index <- lr_index[complete.cases(lr_index),]
+    
+    return(lr_index)
+  }
+
+
+lr_index_example <- create_lr_index(lr_example)
+lr_index_example
+
+
+
+```
+
+##  plot lr pairs 
+
+
+```{r}
+
+find_row_list_number <- function(lr_index,list_of_lists) {
+         
+       for (i in 1: length(list_of_lists)) {
+          if (all(lr_index %in% list_of_lists[[i]])) {
+                       ind = i 
+                        break
+          }
+       }
+  return(ind)
+}
+
+plot_lr_pair <- function(obj, lr_pair, arrows = T, cluster = list()){
+  #obj = df
+   cell_index <- unique(as.numeric(c(rownames(lr_pair),as.numeric(lr_pair))))
+  
+    lr_index <- create_lr_index(lr_pair,Nopairadd = FALSE)
+    
+    cell_meta <- obj$meta$locat[unique(lr_index),]
+ 
+     plot(df$meta$locat, pch=19,cex = 0.5, col = ifelse(obj$meta$cell_type %in% c(3,4), "grey", df$meta$cell_type))
+  
+  text(df$meta$x[cell_index],df$meta$y[cell_index], cell_index, pos = 3)
+  
+
+for (i in 1:nrow(lr_index)) {
+      #sender
+       A = lr_index[i,2]
+      #receiver
+      B = lr_index[i,1]
+      
+      x1 <- cell_meta[rownames(cell_meta) == A, 1]
+      y1 <- cell_meta[rownames(cell_meta) == A, 2]
+      x2 <- cell_meta[rownames(cell_meta) == B, 1]
+      y2 <- cell_meta[rownames(cell_meta) == B, 2]
+      
+      
+if (length(cluster) == 0 ){
+if (arrows)  {
+   arrows(x1, y1, x2, y2, length = 0.1)
+}
+else{
+    lines(c(x1, x2), c(y1, y2), col = 1 )
+}
+      
+}
+  else{
+    
+    if (arrows)  {
+   arrows(x1, y1, x2, y2, length = 0.1, col =as.numeric(find_row_list_number(lr_index[i, ], cluster)))
+     }
+else{
+      lines(c(x1, x2), c(y1, y2), col = as.numeric(find_row_list_number(lr_index[i, ],cluster)))
+     }
+  }
+  
+}
+}
+
+
+#example  
+
+
+    plot_lr_pair(df, lr_example)
+
+    
+    
+```
+## find neighbourhoods 
+```{r}
+
+find_network <- function(obj, lr_pairs, plot = TRUE) {
+  
+  find_neighbor <- function(lr_pairs, Nopairadd = TRUE){
+    
+  lr_index <- create_lr_index(lr_pairs)
+  neighbor <- list()
+  
+  for (value in unique(lr_index[, 1])) {
+    # Extract rows with the current value
+    rows <- lr_index[lr_index[,1] == value, ]
+    # Append the rows to the result list as a matrix
+    neighbor[[length(neighbor) + 1]] <- matrix(rows, ncol = 2, byrow = FALSE)
+  }
+  
+  # Return the result
+  return(neighbor)
+}
+  
+  if(plot){
+    neighbor_plot <- find_neighbor(lr_pairs,Nopairadd = FALSE)
+    plot_lr_pair(obj, lr_pairs, arrows = T, cluster = neighbor_plot)
+    
+  }
+  
+  network <- find_neighbor(lr_pairs)
+  return(network)
+  
+}
+
+find_network(df,lr_example)
+
+
+```
+# SVC model
+##dataset generating
+```{r}
+build_dataset <- function(df, lr) {
+  lr_network <- find_network(df, lr, plot = FALSE)
+  dataset <- vector("list", length(lr_network))  
+  
+  # Initialize dataset as a list with the required number of elements
+
+  
+  for (j in 1:length(lr_network)) {
+    single_network <- lr_network[[j]]
+
+    for (i in 1:(length(single_network)/2)) {
+      
+      if (length(single_network)/2 < 2) {
+        ligand <- as.numeric(single_network[[1]])
+        receptor <- as.numeric(single_network[[2]])
+      } else {
+        row <- single_network[i, ]
+        ligand <- as.numeric(row[1])
+        receptor <- as.numeric(row[2])
+      }
+      
+      gene_class_L <- df$meta$cell_type[ligand]
+      gene_class_R <- df$meta$cell_type[receptor]
+      
+      expression <- cbind(df$meta$gene1, df$meta$gene2, df$meta$gene3, df$meta$gene4)
+      x <- expression[ligand, gene_class_L]
+      y <- expression[receptor, gene_class_R]
+     if(length(y) == 0){
+       y = 0
+     }
+      
+      new_expression_row <- c(x, y)
+      dataset[[j]] <- rbind(dataset[[j]], new_expression_row)
+    }
+  }
+  
+  return(dataset)
+}
+
+ds_example <- build_dataset(df, lr_example)
+
+ds_example
+
+
+
+```
+##SVC model
+
+```{r, eval = FALSE}
+#model1 optimal method = Nelder-Mead, initial value = 0
+#the objecctive function is not converging for this method
+SVC_model1 <- function(obj, lr, lambda1, lambda2) {
+  
+  ds <- build_dataset(obj, lr)
+  ds_matrix<- do.call(rbind, ds)
+  receiver <- obj$meta$cell_type[as.numeric(rownames(lr))[1]]
+  sender <- obj$meta$cell_type[na.omit(as.numeric(lr_example))[[1]]]
+  
+  Y <- as.matrix(ds_matrix[,1],ncol = 1)
+  X <- cbind(rep(1,nrow(ds_matrix)),as.matrix(ds_matrix[,2],ncol = 1))
+  lr[,1]<- ifelse(is.na(lr[,1]), "0",lr[,1] )
+  
+  
+   count_non_na <- function(row) {
+          sum(!is.na(row))
+   }
+   
+        non_na_counts <- as.matrix(apply(lr, 1, count_non_na),ncol = 1)
+        
+
+    objective_function <- function(beta) {
+    
+       beta <- matrix(beta, ncol = 2)
+       beta2 <- beta[rep(seq_len(nrow(beta)), times = non_na_counts), ]
+       
+       residuals <- Y - matrix(rowSums(X * beta2), ncol = 1)
+
+      # Calculate the squared sum of residuals
+      L <- sum(residuals^2) / (2 * nrow(X))
+
+      # Calculate the penalty terms
+      R1 <- lambda1 * sum(abs(beta))
+      
+      # Calculate the penalty term R2
+      
+      
+      Dis <- obj$para$dist[obj$meta$cell_type == receiver, obj$meta$cell_type == receiver]
+      
+     
+     weight <- 1/Dis
+     weight[weight == Inf] <- 0
+     
+      R2 <- lambda2 * sum(abs(as.matrix(dist(beta[,1]))) * weight +  abs(as.matrix(dist(beta[,1]))) * weight)
+
+      objective_value <- L + R1 + R2
+      return(objective_value)
+    }
+
+    result <- optim(par = matrix(rep(0, 2*length(ds)),ncol = 2), fn = objective_function, method = "Nelder-Mead" )
+    
+    beta_list <- result
+    
+    return(beta_list)
+    
+  }
+
+
+beta_coefficients <- SVC_model1(df, lr_example, 
+                               lambda1 = 0.001,
+                               lambda2 = 0.001)
+
+
+beta_coefficients
+```
+
+```{r, eval = FALSE}
+ # model2 optimal method = BFGS, initial value = 0
+SVC_model2 <- function(obj, lr, lambda1, lambda2) {
+  
+  ds <- build_dataset(obj, lr)
+  ds_matrix<- do.call(rbind, ds)
+  receiver <- obj$meta$cell_type[as.numeric(rownames(lr))[1]]
+  sender <- obj$meta$cell_type[na.omit(as.numeric(lr_example))[[1]]]
+  
+  Y <- as.matrix(ds_matrix[,1],ncol = 1)
+  X <- cbind(rep(1,nrow(ds_matrix)),as.matrix(ds_matrix[,2],ncol = 1))
+  lr[,1]<- ifelse(is.na(lr[,1]), "0",lr[,1] )
+  
+   count_non_na <- function(row) {
+          sum(!is.na(row))
+   }
+   
+        non_na_counts <- as.matrix(apply(lr, 1, count_non_na),ncol = 1)
+        
+
+    objective_function <- function(beta) {
+    
+       beta <- matrix(beta, ncol = 2)
+       beta2 <- beta[rep(seq_len(nrow(beta)), times = non_na_counts), ]
+       
+       residuals <- Y - matrix(rowSums(X * beta2), ncol = 1)
+
+      # Calculate the squared sum of residuals
+      L <- sum(residuals^2) / (2 * nrow(X))
+
+      # Calculate the penalty terms
+      R1 <- lambda1 * sum(abs(beta))
+      
+      # Calculate the penalty term R2
+      Dis <- obj$para$dist[obj$meta$cell_type == receiver, obj$meta$cell_type == receiver]
+      
+     
+     weight <- 1/Dis
+     weight[weight == Inf] <- 0
+     
+      R2 <- lambda2 * sum(abs(as.matrix(dist(beta[,1]))) * weight +  abs(as.matrix(dist(beta[,1]))) * weight)
+
+      objective_value <- L + R1 + R2
+   cat("L is", L, "\n")
+   cat("R1 is", R1, "\n")
+   cat("R2 is", R2, "\n")
+   cat("sum is", objective_value, "\n")
+      return(objective_value)
+    }
+    
+
+    result <- optim(par = matrix(rep(0, 2*length(ds)),ncol = 2), fn = objective_function, method = "BFGS" )
+ 
+    beta_list <- result
+    
+    #likelihood test for /beta = 0
+    beta1 <- beta_list$par
+    beta2 <- beta1[rep(seq_len(nrow( beta1)), times = non_na_counts), ]
+
+    l_hypo =log(prod(matrix(rowSums(X * beta2), ncol = 1)))
+    
+    l_null = log(prod(Y))
+    likelihood_score = 2*(l_hypo- l_null)
+    beta_list$score = likelihood_score
+    return(beta_list)
+    
+  }
+
+
+beta_coefficients <- SVC_model2(df, lr_example, 
+                               lambda1 = 0.000001,
+                               lambda2 = 0.0000001)
+
+
+
+
+ds_example <- build_dataset(df, lr_example)
+means_example <- lapply(ds_example, colMeans)
+
+  ds_matrix_example<- do.call(rbind, ds_example)
+    Y_example <- as.matrix(ds_matrix_example[,1],ncol = 1)
+    mean(Y_example)
+    sd(Y_example)
+    hist(Y_example)
+  X_example <- cbind(rep(1,nrow(ds_matrix_example)),as.matrix(ds_matrix_example[,2],ncol = 1))
+
+beta1_example <- beta_coefficients$par
+beta2_example <- beta1[rep(seq_len(nrow( beta1)), times = non_na_counts), ]
+
+    l_hypo =log(prod(matrix(rowSums(X_example * beta2_example), ncol = 1)))
+    
+    l_null = log(prod(Y_example))
+    likelihood_score = 2*(l_hypo- l_null)
+    beta_list$score = likelihood_score
+
+beta_coefficients
+```
+
+
+```{r}
+ # model3 optimal method = BFGS, initial value = 0
+SVC_model3 <- function(obj, lr, lambda1, lambda2) {
+  
+  ds <- build_dataset(obj, lr)
+  means <- lapply(ds, colMeans)
+  ds_matrix<- do.call(rbind, means)
+  receiver <- obj$meta$cell_type[as.numeric(rownames(lr))[1]]
+  sender <- obj$meta$cell_type[na.omit(as.numeric(lr))[[1]]]
+  
+  Y <- as.matrix(ds_matrix[,1],ncol = 1)
+  X <- as.matrix(ds_matrix[,2],ncol = 1)
+  X_0 <- as.matrix(rep(1, nrow(ds_matrix)),ncol = 1)
+  X<- cbind(X,X_0)
+  
+  #function for beta0 and beta1
+    objective_function <- function(beta) {
+ 
+       beta <- matrix(beta, ncol = 2)
+       
+       residuals <- Y - matrix(rowSums(X * beta), ncol = 1)
+
+
+      # Calculate the squared sum of residuals
+      L <- sum(residuals^2) / (2 * nrow(X))
+
+      # Calculate the penalty terms
+      R1 <- lambda1 * sum(abs(beta))
+      
+      # Calculate the penalty term R2
+      Dis <- obj$para$dist[obj$meta$cell_type == receiver, obj$meta$cell_type == receiver]
+      
+     
+     weight <- 1/Dis
+     weight[weight == Inf] <- 0
+     
+      R2 <- lambda2 * sum(abs(as.matrix(dist(beta[,1]))) * weight +  abs(as.matrix(dist(beta[,1]))) * weight)
+
+      objective_value <- L + R1 + R2
+#  cat("L is", L, "\n")
+#  cat("R1 is", R1, "\n")
+#  cat("R2 is", R2, "\n")
+#  cat("sum is", objective_value, "\n")
+      return(objective_value)
+    }
+    
+
+    result <- optim(par = matrix(rep(0, 2*length(ds)),ncol = 2), fn = objective_function, method = "BFGS" )
+ 
+    beta_list <- result
+    
+    #likelihood test for /beta = 0
+    Y_mean = mean(Y)
+    Y_sd = sd(Y)
+    
+    beta_expre = matrix(rowSums(X * beta_list$par), ncol = 1)
+    
+    hypo_prob = dnorm(beta_expre, Y_mean, Y_sd)
+    null_prob = dnorm(Y, Y_mean, Y_sd)
+    l_hypo = log(prod(hypo_prob))
+    l_null = log(prod(null_prob))
+
+    likelihood_score = 2*abs(l_hypo-l_null)
+    beta_list$score = likelihood_score
+    return(beta_list)
+}
+    
+
+
+beta_coefficients <- SVC_model3(df, lr_example, 
+                               lambda1 = 0.000001,
+                               lambda2 = 0.0000001)
+
+beta_coefficients
+```
+
