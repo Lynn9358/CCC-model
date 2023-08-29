@@ -23,9 +23,10 @@ df$meta <- list()
 df$meta$cell <- c(1:500)
 df$meta$x <- runif(500, min = 0, max = 100)
 df$meta$y <- runif(500, min = 0, max = 100)
-
-df$meta$gene<- matrix(c(runif(2000, min = 0, max = 1)),ncol = 4)
-
+gene1 <- c(rep(0, 200), rep(1, 100), rep(0, 100), rep(1, 100))
+gene2 <- c(rep(0, 200), rep(0, 100), rep(1, 100), rep(1, 100))
+df$meta$gene <- cbind(gene2,gene1)
+colnames(df$meta$gene) = c(1:2)
 df$meta$locat <- data.frame(df$meta$x,df$meta$y)
 df$para$dist <- as.matrix(dist(df$meta$locat))
 df$meta$cell_type<- sample(1:4, length(df$meta$cell), replace = TRUE)
@@ -88,10 +89,10 @@ get_lr_wknn <- function(obj,sender,receiver, k){
 }
   
   
-## lr_example <- get_lr_wknn(df,
-#            sender = 1,
-#            receiver = 2,
-#            k = 4)
+lr_example <- get_lr_wknn(df,
+        sender = 1,
+           receiver = 2,
+          k = 4)
 
 
 ```
@@ -115,7 +116,6 @@ get_lr_wknn <- function(obj,sender,receiver, k){
 
 
 lr_index_example <- create_lr_index(lr_example)
-lr_index_example
 
 
 
@@ -306,11 +306,10 @@ ds_example <- build_dataset(df_star, star_example,"Sstr2" ,"Cort")
 
 
 
-
 ```
 
 ```{r}
-ds_example <- build_dataset(df, lr_example)
+ds_example <- build_dataset(df, lr_example,"2" ,"1")
 
 ds_example
 
@@ -412,9 +411,11 @@ SVC_model4 <- function(obj, lr,recepter,ligand , lambda1, lambda2) {
 }
     
 
-#beta_coefficients <- SVC_model4(df, lr_example, 
-#                               lambda1 = 0.0001,
-#                               lambda2 = 0.0001)
+beta_coefficients <- SVC_model4(df, lr_example, 
+                                recepter = "2",
+                                ligand = "1",
+                              lambda1 = 0.0001,
+                               lambda2 = 0.0001)
 
 
 ```
@@ -471,7 +472,7 @@ data_1 <- as.matrix(ds_example[,c(ncol(ds_example)-1, ncol(ds_example))],ncol = 
 # color
 data_2 <- as.matrix(beta_coefficients$beta_1, ncol =1)
 data_3 <- beta_coefficients$beta_0
-data_deep <-  data_2 + data_3
+data_deep <-  data_2 + data_3 + beta_coefficients$intercept
 
 #list of location
 data_all[[1]] <- data.frame(x =data_1[,1], y = data_1[,2], color = data_deep )
@@ -586,3 +587,7 @@ beta_coefficients <- SVC_model5(df, lr_example,
 
 ```
 
+```{r}
+beta_coefficients
+as.matrix(beta_coefficients$par[-c(1,2),]+ beta_coefficients$par[2,],ncol = 1)
+```

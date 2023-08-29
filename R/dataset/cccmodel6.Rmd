@@ -1,0 +1,53 @@
+---
+title: "CCCmodel6"
+author: "Wenjing Li"
+date: "2023-08-29"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(parallel)
+```
+
+# object function
+```{r}
+
+objective_function <- function(beta,
+                               Y,
+                               X,
+                               tau = 1,
+                               sigma = 1,
+                               phi = 1,
+                               lambda1 = 0.001,
+                               lambda2 = 0.00001) {
+  
+  obj1 <- as.matrix(beta, ncol = 1)
+  int <- obj1[1]
+  beta_0 <- obj1[2]
+  beta_1 <- as.vector(obj1[-c(1, 2)])
+  beta_new <- as.matrix(cbind(rep(int, length(beta_1)), rep(beta_0, length(beta_1)), beta_1))
+  residuals <- Y - matrix(rowSums(X * beta_new), ncol = 1)
+
+  # Calculate the squared sum of residuals
+  L <- 1/tau * sum(residuals^2) 
+
+  # Calculate the penalty terms
+  R1 <- lambda1 * sum(abs(beta))
+
+  # Calculate the penalty term R2
+  Dis <- as.matrix(obj$para$dist[obj$meta$cell_type == receiver, obj$meta$cell_type == receiver])
+  weight <- exp(-phi * Dis)
+  G <- sigma * weight
+  beta_1 <- as.matrix(beta_1)
+  R2 <- as.numeric(lambda2 * (t(beta_1) %*% G %*% beta_1))
+
+  objective_value <- L + R1 + R2
+  return(objective_value)
+}
+
+
+```
+
+
+

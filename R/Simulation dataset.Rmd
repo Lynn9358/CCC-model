@@ -1,0 +1,54 @@
+---
+title: "Simulation"
+author: "Wenjing Li"
+date: "2023-08-29"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Null similation
+```{r}
+
+Null_dataset_gen<-function(){
+df <- list()
+df$meta <- list()
+df$meta$cell <- c(1:500)
+df$meta$x <- runif(500, min = 0, max = 100)
+df$meta$y <- runif(500, min = 0, max = 100)
+gene1 <- c(rep(0, 200), rep(1, 100), rep(0, 100), rep(1, 100))
+gene2 <- c(rep(0, 200), rep(0, 100), rep(1, 100), rep(1, 100))
+df$meta$gene <- cbind(gene1,gene2)
+colnames(df$meta$gene) = c(1:2)
+df$meta$locat <- data.frame(df$meta$x,df$meta$y)
+df$para$dist <- as.matrix(dist(df$meta$locat))
+df$meta$cell_type<- sample(1:4, length(df$meta$cell), replace = TRUE)
+return(df)
+}
+df = Null_dataset_gen()
+```
+
+
+#Simulation with known variable
+```{r}
+set.seed(1)
+df2<- list()
+df2$meta$cell <- c(1:100)
+x <- seq(0, 90, by = 10)
+y <- seq(0, 90, by = 10)
+df2$meta$locat <- expand.grid(x,y)
+gene1 <- runif(100, min = 0, max = 95)
+
+
+plot(df2$meta$locat)
+
+
+
+
+
+```
+
+
+```

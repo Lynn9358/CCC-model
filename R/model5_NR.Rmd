@@ -260,7 +260,6 @@ plot_result(data_all5, data_lig,data_els)
 
 ## test
 ```{r}
-grad1 <- numDeriv::grad(model5, initial_params)
 
 
 
