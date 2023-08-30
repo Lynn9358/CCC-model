@@ -5,12 +5,11 @@ date: "2023-08-08"
 ---
 
 ```{r setup, include=FALSE}
-install.packages(pkgs = 'devtools')
 devtools::install_github('linxihui/NNLM')
 library('devtools')
 library('NNLM')
 devtools::install_github('ZJUFanLab/SpaTalk')
-library('ZJUFanLab/SpaTalk')
+library('SpaTalk')
 library(spdep)
 library(glmnet)
 library(RColorBrewer)

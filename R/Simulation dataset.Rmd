@@ -7,6 +7,10 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+install.packages("dplyr")
+install.packages("vctrs", dependencies = TRUE)
+
+library("dplyr")
 ```
 
 #Null similation
@@ -34,21 +38,161 @@ df = Null_dataset_gen()
 #Simulation with known variable
 ```{r}
 set.seed(1)
+
+
 df2<- list()
+
+
+# index for ys
 df2$meta$cell <- c(1:100)
-x <- seq(0, 90, by = 10)
-y <- seq(0, 90, by = 10)
+x <- seq(5, 100, by = 10)
+y <- seq(5, 100, by = 10)
 df2$meta$locat <- expand.grid(x,y)
-gene1 <- runif(100, min = 0, max = 95)
+colnames(df2$meta$locat) <- c("x","y")
+
+gene1 <- runif(100, min = 0, max = 3)
+df2$meta$gene <- cbind(gene1 , 0)
+colnames(df2$meta$gene) <- c("gene1","gene2")
+df2$meta$cell_type <- c(rep(1,100),rep(2,300))
+
+df2_data_frame <- as.data.frame(cbind(df2$meta$cell,df2$meta$locat))
+
+cell_1<- df2_data_frame %>%
+  filter(x > 50 & y > 50) %>%
+  select(1) %>%
+  unlist()
+cell_2<- df2_data_frame %>%
+  filter(x <= 50 & y > 50) %>%
+  select(1) %>%
+  unlist()
+
+cell_3<- df2_data_frame %>%
+  filter(x <= 50 & y <= 50) %>%
+  select(1) %>%
+  unlist()
+
+cell_4<- df2_data_frame %>%
+  filter(x > 50 & y <= 50) %>%
+  select(1) %>%
+  unlist()
+
+cell_list <- cbind(cell_1, cell_2,cell_3,cell_4)
 
 
-plot(df2$meta$locat)
+#index for xs
+#x_1
+df2$meta$cell <- c(df2$meta$cell,c(101:200))
+x <- seq(5+1, 100+1, by = 10)
+y <- seq(5, 100, by = 10)
+location <- expand.grid(x,y)
+colnames(location) <- c("x","y")
+df2$meta$locat <- rbind(df2$meta$locat,location)
+cell_list2 <- cell_list + 100
+df2$meta$gene <- rbind(df2$meta$gene, matrix(rep(0,200), ncol =2))
+
+# first Quadrant
+gene1_1<- df2$meta$gene[cell_list[,1],1]
+df2$meta$gene[cell_list2[,1],2] = 1+ 1* gene1_1 + 1* gene1_1 
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+
+# Second Quadrant
+gene1_2<- df2$meta$gene[cell_list[,2],1]
+df2$meta$gene[cell_list2[,2],2] = 1+ 1* gene1_2 
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+  
+# Third Quadrant
+gene1_3<- df2$meta$gene[cell_list[,3],1]
+df2$meta$gene[cell_list2[,3],2] = 1+ 1* gene1_3 -1*gene1_3
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+
+# Fourth Quadrant
+gene1_4<- df2$meta$gene[cell_list[,4],1]
+df2$meta$gene[cell_list2[,4],2] = 1+ 1* gene1_4
 
 
 
+
+
+
+#x_2
+
+df2$meta$cell <- c(df2$meta$cell,c(201:300))
+x <- seq(5, 100, by = 10)
+y <- seq(5+1, 100+1, by = 10)
+location <- expand.grid(x,y)
+colnames(location) <- c("x","y")
+df2$meta$locat <- rbind(df2$meta$locat,location)
+cell_list3 <- cell_list + 200
+df2$meta$gene <- rbind(df2$meta$gene, matrix(rep(0,200), ncol =2))
+
+# first Quadrant
+df2$meta$gene[cell_list3[,1],2] = 1+ 1 * gene1_1 + 1* gene1_1 
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+
+# Second Quadrant
+df2$meta$gene[cell_list3[,2],2] = 1+ 1* gene1_2 
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+  
+# Third Quadrant
+df2$meta$gene[cell_list3[,3],2] = 1+ 1* gene1_3 -1*gene1_3
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+
+# Fourth Quadrant
+df2$meta$gene[cell_list3[,4],2] = 1+ 1* gene1_4
+
+
+
+
+
+#x_3
+
+df2$meta$cell <- c(df2$meta$cell,c(301:400))
+x <- seq(5, 100, by = 10)
+y <- seq(5-1, 100-1, by = 10)
+location <- expand.grid(x,y)
+colnames(location) <- c("x","y")
+df2$meta$locat <- rbind(df2$meta$locat,location)
+cell_list4 <- cell_list + 300
+df2$meta$gene <- rbind(df2$meta$gene, matrix(rep(0,200), ncol =2))
+
+# first Quadrant
+df2$meta$gene[cell_list4[,1],2] = 1+ 1 * gene1_1 + 1* gene1_1 
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+
+# Second Quadrant
+df2$meta$gene[cell_list4[,2],2] = 1+ 1* gene1_2 
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+  
+# Third Quadrant
+df2$meta$gene[cell_list4[,3],2] = 1+ 1* gene1_3 -1*gene1_3
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+
+# Fourth Quadrant
+df2$meta$gene[cell_list4[,4],2] = 1+ 1* gene1_4
+
+
+
+df2$para$dist <- as.matrix(dist(df2$meta$locat))
+
+plot(df2$meta$locat, pch = 19, cex = 0.5, col = ifelse(df2$meta$cell_type %in% "1" , "black", "grey"))
+
+     text(x= df2$meta$locat$x, y = df2$meta$locat$y, df2$meta$cell, pos = 3)
+
+     
+     
 
 
 ```
+
+
+
+# Finding Neighbour
+## Weight KNN
+```{r}
+lr_example <- get_lr_wknn(df,
+        sender = 2 ,
+           receiver = 1,
+          k = 3)
 
 
 ```

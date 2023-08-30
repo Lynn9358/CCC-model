@@ -1,0 +1,214 @@
+---
+title: "cccmodel+opti"
+author: "Wenjing Li"
+date: "2023-08-30"
+output: pdf_document
+---
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+install.packages("spdep")
+library(spdep)
+library(glmnet)
+library(RColorBrewer)
+library('spBayes')
+library(ggplot2)
+library(optimx)
+```
+# Finding Neighbour
+
+## Weight KNN
+```{r}
+## Weighted K-NN for lr pairs
+
+get_lr_wknn <- function(obj,sender,receiver, k){
+  
+  if(!all(c(sender, receiver) %in% unique(obj$meta$cell_type))) {
+    stop("Can not find sender/receiver in the data")}
+  
+  else {
+    
+    #distance matrix
+    
+    distance <- obj$para$dist[obj$meta$cell_type == receiver, obj$meta$cell_type == sender]
+    
+    R <- list()
+    
+    #the indix of receiver
+    R$indices <- as.matrix(t(head(apply(distance, 1, function(x) as.numeric(colnames(distance)[order(x,decreasing = FALSE)])),k)))
+    
+    
+   #the distances of receiver from sender
+    R$distances <- t(head(apply(distance, 1, function(x) sort(x, decreasing = FALSE)), k))
+    
+    weighted_counts <- R$distances
+    percentile_weight <- head(sort(weighted_counts), length(weighted_counts) * 0.35)
+    
+    index_wknn <- t(apply(weighted_counts, 1 , function(x) x %in% percentile_weight))
+    
+     lr_wknn  <- R$indices * index_wknn
+     
+     lr_wknn[lr_wknn == 0 ] <- NA
+     
+     lr_wknn <- cbind(lr_wknn,obj$meta$locat[obj$meta$cell_type == receiver]
+     
+     
+     name <- c(c(1:k),"X","Y")
+     
+     
+     colnames(lr_wknn) <-  name
+    
+    return(lr_wknn)
+  }
+}
+  
+  
+
+
+```
+
+## create lr index 
+```{r}
+ create_lr_index <- function(lrpair, Nopairadd = TRUE ){
+   if(Nopairadd) {
+    lrpair[,1]<- ifelse(is.na(lrpair[,1]), "0",lrpair[,1] )
+   }
+   
+    A = rep(row.names(lrpair), each = ncol(lrpair)-2 )
+    B = as.vector(t(lrpair[,-c(ncol(lrpair)-1, ncol(lrpair))]))
+    
+    lr_index <- cbind(A,B)
+    
+    lr_index <- lr_index[complete.cases(lr_index),]
+    
+    return(lr_index)
+  }
+
+
+lr_index_example <- create_lr_index(lr_example)
+
+
+
+```
+
+
+
+##  plot lr pairs 
+
+
+```{r}
+
+find_row_list_number <- function(lr_index,list_of_lists) {
+         
+       for (i in 1: length(list_of_lists)) {
+          if (all(lr_index %in% list_of_lists[[i]])) {
+                       ind = i 
+                        break
+          }
+       }
+  return(ind)
+}
+
+plot_lr_pair <- function(obj, lr_pair, arrows = T, cluster = list()){
+  #obj = df
+   cell_index <- unique(as.numeric(c(rownames(lr_pair),as.numeric(lr_pair))))
+  
+    lr_index <- create_lr_index(lr_pair,Nopairadd = FALSE)
+    
+    lr_uni <- as.vector(unique(lr_index))
+    
+    lr_meta <- obj$meta$locat[lr_uni,]
+    recepter <- obj$meta$cell_type[as.numeric(rownames(lr_pair)[1])]
+    ligand <- obj$meta$cell_type[as.numeric(lr_pair)[1]]
+    
+    celltype <- as.vector(obj$meta$cell_type)
+    ct_index <- as.vector(unique(celltype))
+    color <- match(celltype,ct_index)
+    
+    
+
+     plot(locat, pch = 19, cex = 0.5, col = ifelse(celltype %in% c(recepter, ligand), color, "grey"))
+
+     text(lr_meta[lr_index,], lr_uni, pos = 3)
+  
+
+for (i in 1:nrow(lr_index)) {
+      #sender
+       A = lr_index[i,2]
+      #receiver
+      B = lr_index[i,1]
+      
+      x1 <- lr_meta[rownames(lr_meta) == A, 1]
+      y1 <- lr_meta[rownames(lr_meta) == A, 2]
+      x2 <- lr_meta[rownames(lr_meta) == B, 1]
+      y2 <- lr_meta[rownames(lr_meta) == B, 2]
+      
+      
+if (length(cluster) == 0 ){
+if (arrows)  {
+   arrows(x1, y1, x2, y2, length = 0.1)
+}
+else{
+    lines(c(x1, x2), c(y1, y2), col = 1 )
+}
+      
+}
+  else{
+    
+    if (arrows)  {
+   arrows(x1, y1, x2, y2, length = 0.1, col =as.numeric(find_row_list_number(lr_index[i, ], cluster)))
+     }
+else{
+      lines(c(x1, x2), c(y1, y2), col = as.numeric(find_row_list_number(lr_index[i, ],cluster)))
+     }
+  }
+  
+}
+}
+
+
+#example  
+
+
+
+    
+    
+```
+## find neighbourhoods
+```{r}
+
+find_network <- function(obj, lr_pairs, plot = TRUE) {
+  
+  find_neighbor <- function(lr_pairs, Nopairadd = TRUE){
+    
+  lr_index <- create_lr_index(lr_pairs)
+  neighbor <- list()
+  
+  for (value in unique(lr_index[, 1])) {
+    # Extract rows with the current value
+    rows <- lr_index[lr_index[,1] == value, ]
+    # Append the rows to the result list as a matrix
+    neighbor[[length(neighbor) + 1]] <- matrix(rows, ncol = 2, byrow = FALSE)
+  }
+  
+  # Return the result
+  return(neighbor)
+}
+  
+  if(plot){
+    neighbor_plot <- find_neighbor(lr_pairs,Nopairadd = FALSE)
+    plot_lr_pair(obj, lr_pairs, arrows = T, cluster = neighbor_plot)
+    
+  }
+  
+  
+
+  network <- find_neighbor(lr_pairs)
+  return(network)
+  
+}
+
+find_network(df,lr_example)
+
+
+```
