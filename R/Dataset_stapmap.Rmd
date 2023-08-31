@@ -102,9 +102,9 @@ result_plot(ds_example,df_star,ds_coefficients1, 'Astro', 'eL5')
 
 #dataset generation
 ```{r}
-ds_example2 <- build_dataset(df_star, star_example,"Cort" ,"Cort")
+ds_example2 <- build_dataset(df_star, star_example,"Sstr2" ,"Cort")
 
-ds_coefficients2 <- SVC_model4(df_star, star_example, "Cort" ,"Cort",
+ds_coefficients2 <- SVC_model4(df_star, star_example, "Sstr2" ,"Cort",
                                lambda1 = 0.0001,
                                lambda2 = 0.0001)
 ```

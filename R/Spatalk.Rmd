@@ -47,7 +47,7 @@ plot_st_cor_heatmap(object = obj,
 
 obj@meta$rawmeta$celltype <- starmap_meta$celltype
 obj <- find_lr_path(object = obj, lrpairs = lrpairs, pathways = pathways)
-obj <- dec_cci(object = obj, 
+obj <- c(object = obj, 
                celltype_sender = 'eL5',
                celltype_receiver = 'Astro')
 
