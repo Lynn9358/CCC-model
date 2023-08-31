@@ -9,7 +9,6 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 install.packages("dplyr")
 install.packages("vctrs", dependencies = TRUE)
-
 library("dplyr")
 ```
 
@@ -187,9 +186,9 @@ plot(df2$meta$locat, pch = 19, cex = 0.5, col = ifelse(df2$meta$cell_type %in% "
 
 
 # Finding Neighbour
-## Weight KNN
 ```{r}
-lr_example <- get_lr_wknn(df,
+## Weight KNN
+lr_example2 <- get_lr_wknn(df,
         sender = 2 ,
            receiver = 1,
           k = 3)
