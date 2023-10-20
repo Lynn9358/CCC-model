@@ -470,19 +470,21 @@ beta <- matrix(0, nrow = nrow(gene_data), ncol = nrow(matrix_data))
 rownames(beta) <- gene_relationships
 colnames(beta)<- cell_relationships
 
+#1:nrow(matrix_data)
 for (i in 1:nrow(matrix_data)) {
+  #1:nrow(gene_data)
   for (j in 1:nrow(gene_data)) {
     lr_seqfish <- get_lr_wknn(dataset_seqfish,
         sender  = matrix_data[i,1],
            receiver = matrix_data[i,2],
           k = 3)
-    
-    
+   
     result_seqfish <- SVC_model8(dataset_seqfish, lr_seqfish, 
       recepter = gene_data[j, 2],
       ligand = gene_data[j, 1],
       lambda1 = 0,
       lambda2 = 0)
+    
 
     beta[j, i] = result_seqfish$beta[2, 1]
     
@@ -501,7 +503,7 @@ pheatmap(beta,
 
 
 ##another
-color_breaks <- seq(-5, 8, length.out = 101)  # Adjust the breaks as needed
+color_breaks <- seq(-5, 5, length.out = 101)  # Adjust the breaks as needed
 
 # Create the heatmap with custom color breaks
 pheatmap(beta,

@@ -508,7 +508,7 @@ SVC_model8 <- function(obj,
     beta_old = beta
     b_old = b
     b = G %*% Z %*% solve(sigma_c) %*% (Y - X %*% beta)
-    browser()
+
     beta = solve(t(X) %*% solve(sigma_c) %*% X) %*% (t(X) %*% solve(sigma_c) %*% (Y - Z %*% b))
     xi = max(sum((beta - beta_old)^2), sum((b - b_old)^2))
 #    score =1/2* (t(as.matrix(Y) - X %*% beta - Z %*% b)) %*% solve(sigma_c) %*% (as.matrix(Y) -X %*% beta - Z %*% b)
