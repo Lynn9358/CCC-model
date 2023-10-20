@@ -21,6 +21,15 @@ library(optimx)
 
 #prepare data
 ```{r}
+obj <- createSpaTalk(st_data = as.matrix(starmap_data),
+                     st_meta = starmap_meta[, -4],
+                     species = "Mouse",
+                     if_st_is_sc = T,
+                     spot_max_cell = 1)
+obj <- dec_celltype(object = obj,
+                    sc_data = as.matrix(starmap_data),
+                    sc_celltype = starmap_meta$celltype)
+
 data <- obj@meta$rawmeta
 
 x <- data[colnames(data) == "x"]
@@ -39,10 +48,7 @@ df_star <- list()
 df_star$meta <- list()
 df_star$meta$cell <- c(1:nrow(data))
 
-df_star$meta$x <- x$x
-df_star$meta$y <- y$y
-
-df_star$meta$locat <- locat
+df_star$meta$locat <- as.data.frame(locat)
 df_star$meta$cell_type<- ct
 df_star$para$dist <- obj@dist
 
@@ -98,7 +104,7 @@ ds_coefficients1 <- SVC_model4(df_star, star_example, "Trpv6" ,"S100a10",
 ```{r}
 
 
-result_plot(ds_example,df_star,ds_coefficients1, 'Astro', 'eL5')
+result_plot(ds_example1,df_star,ds_coefficients1, 'Astro', 'eL5')
 
 
 
@@ -115,7 +121,7 @@ ds_coefficients2 <- SVC_model4(df_star, star_example, "Sstr2" ,"Cort",
 ```
 
 ```{r}
-result_plot(ds_example2,df_star,ds_coefficients2, 'Astro', 'eL5')
+result_plot(df_star,ds_coefficients2, 'Astro', 'eL5')
 ```
 
 

@@ -1,5 +1,5 @@
 ---
-title: "cccmodel+opti"
+title: "cccmodel+opti2"
 author: "Wenjing Li"
 date: "2023-08-30"
 output: pdf_document
@@ -10,9 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(spdep)
 library(RColorBrewer)
 library(ggplot2)
-library(optimx)
-install.packages("spgwr")
-
+library(numDeriv)
 ```
 # Finding Neighbour
 
@@ -282,6 +280,8 @@ find_network <- function(obj, lr_pairs, plot = TRUE) {
 ## model with optimazation
 ```{r}
  # model4 optimal method = BFGS, initial value = 0
+
+ 
 SVC_model4 <- function(obj,
                        lr,
                        recepter,
@@ -292,6 +292,7 @@ SVC_model4 <- function(obj,
                        phi = 1) {
   
   dataset <- build_dataset(obj, lr, recepter,ligand)
+  
 
    Y = dataset[,1]
    X_1 = dataset[,2]
@@ -301,7 +302,6 @@ SVC_model4 <- function(obj,
   
   receiver <- obj$meta$cell_type[as.numeric(rownames(lr))[1]]
   sender <- obj$meta$cell_type[na.omit(as.numeric(as.matrix(lr)))[1]]
-  
   
    objective_function <- function(beta) {
    
@@ -313,16 +313,23 @@ SVC_model4 <- function(obj,
        beta_new <- as.matrix(cbind(rep(intercept, length(beta_1)), rep(beta_0, length(beta_1)), beta_1))
    
        residuals = Y  - matrix(rowSums(X * beta_new), ncol = 1)
+     #  Dis = Dis[beta_1 != 0 , beta_1 != 0]
+       weight <- exp(- phi * Dis)
        
-       #log likelihood
-       L <- 1/tau^2 * sum(residuals^2) 
+       #negative log likelihood
+       L <- 1/(2*tau^2) * sum(residuals^2) 
+       
+       
+       #+ 1/2 * t(as.matrix(beta_1, ncol = 1)) %*% solve(weight) %*% as.matrix(beta_1, ncol = 1)
+       
        
        # lasso penalty
-       R1 <- lambda1 * sum(abs(beta_1))
+       R1 <- lambda1 * sum(abs(beta))
        
        
        # Laplacian quadratic penalty
-       weight <- exp(- phi * Dis)
+       
+      
        
        d <-  rowSums(weight)
        D <-  matrix(0, nrow = length(d), ncol = length(d))
@@ -340,38 +347,190 @@ SVC_model4 <- function(obj,
 
 
 
-    result <- optim(par = matrix(rep(0, nrow(dataset) + 2), ncol = 1), fn = objective_function, method = "BFGS")
+# result <- BFGS(objective_function, par = matrix(rep(0, nrow(dataset) + 2), ncol = 1), control = list(maxit = 1000, tol = 1e-6))
+  result <- optim(par = matrix(rep(0, nrow(dataset) + 2), ncol = 1), fn = objective_function, method = "BFGS")
  
+  beta_build <- function(result,X, Y) {
     beta_list <- result
-    
     #likelihood test for /beta = 0
-    
     
        int = beta_list$par[1]
        beta_0 = beta_list$par[2]
        beta_1 = as.vector(beta_list$par[-c(1,2)])
        beta_new <- as.matrix(cbind(intercept = rep(int, length(beta_1)), beta_0 = rep(beta_0, length(beta_1)), beta_1 = beta_1))
   
-    likelihood_score <- 1/tau^2 * sum((Y - matrix(rowSums(X * beta_new), ncol = 1))^2)
+    likelihood_score <- 1/(2*tau^2) *sum((Y - matrix(rowSums(X * beta_new), ncol = 1))^2) 
     
     beta_list$score = likelihood_score
-    beta_list$intercept = int
-    beta_list$beta_0 = beta_0
-    beta_list$beta_1 = beta_1
     
-    return(beta_list) 
+   # for intercept
+     beta_list$intercept <- matrix(0, ncol = 2)
+     colnames(beta_list$intercept) <- c("value","p-value")
+     
+    beta_noint <- cbind(matrix(0, nrow = nrow(beta_new), ncol = 1), beta_new[, -1])
+ #   llr <- 1/tau^2 * sum((matrix(rowSums(X * beta_new), ncol = 1) - matrix(rowSums(X * beta_noint), ncol = 1))^2)
+    llr <- abs(1/tau^2 * (likelihood_score - sum((Y - matrix(rowSums(X * beta_noint), ncol = 1))^2)))
+    
+    beta_list$intercept[,1] = int
+    beta_list$intercept[,2] <- pchisq(llr , 1 , lower.tail = FALSE)
+    
+    
+    # for beta_0
+    beta_list$beta_0 <- matrix(0, ncol = 2)
+    colnames(beta_list$beta_0) <- c("value","p-value")
+    beta_nobeta0 <- cbind( beta_new[, 1],matrix(0, nrow = nrow(beta_new), ncol = 1) , beta_new[, 3])
+ #   llr <- abs(1/tau^2 * sum((matrix(rowSums(X * beta_new), ncol = 1) - matrix(rowSums(X * beta_nobeta0), ncol = 1))^2))
+    llr <- abs(1/tau^2 * (likelihood_score - sum((Y - matrix(rowSums(X * beta_nobeta0), ncol = 1))^2)))
+    
+    beta_list$beta_0[,1] = beta_0
+    beta_list$beta_0[,2] <- pchisq(llr , 1 , lower.tail = FALSE)
+    
+    
+    # for beta_1
+    beta_list$beta_1 <- matrix(0, ncol = 2,nrow = length(beta_1))
+    colnames(beta_list$beta_1) <- c("value","p-value")
+    beta_list$beta_1[,1] = beta_1
+    
+beta_list$beta_1[, 2] <- sapply(1:length(beta_1), function(i) {
+  beta_beta1 <- beta_new
+  beta_beta1[i, 3] <- 0
+  llr <- abs(1/tau^2 * (likelihood_score - sum((Y - matrix(rowSums(X * beta_beta1), ncol = 1))^2)))
+  pchisq(llr, 1, lower.tail = FALSE)
+})
+
+ return(beta_list)
+  }
+  
+  beta_result <- beta_build(result, X, Y )
+  
+  beta_rm <- rep(FALSE, length(Y))
+  
+  beta_1 <- beta_result$beta_1[,1]
+  beta_1_p <- beta_result$beta_1[,2]
+  
+   while(any(abs(beta_1)< 0.1 & beta_1_p > 0.9 )) {
+  beta_rm <- beta_rm | (abs(beta_1)< 0.1 &  beta_1_p > 0.9)
+  initial_value <- c(beta_result$int[,1] , beta_result$beta_0[,1],beta_result$beta_1[!beta_rm, 1])
+  
+  Dis  <- Dis[!beta_rm, !beta_rm]
+  Y <- Y[!beta_rm]
+  X <- X[!beta_rm, ]
+  
+  objective_function <- function(beta) {
+   
+   
+       init_value <- matrix(beta, ncol = 1)
+       intercept = init_value[1]
+       beta_0 = init_value [2]
+       beta_1 = as.vector(init_value[-c(1,2)])
+       beta_new <- as.matrix(cbind(rep(intercept, length(beta_1)), rep(beta_0, length(beta_1)), beta_1))
+   
+       residuals = Y  - matrix(rowSums(X * beta_new), ncol = 1)
+     #  Dis = Dis[beta_1 != 0 , beta_1 != 0]
+       weight <- exp(- phi * Dis)
+       
+       #negative log likelihood
+       L <- 1/(2*tau^2) * sum(residuals^2) 
+       
+       
+       #+ 1/2 * t(as.matrix(beta_1, ncol = 1)) %*% solve(weight) %*% as.matrix(beta_1, ncol = 1)
+       
+       
+       # lasso penalty
+       R1 <- lambda1 * sum(abs(beta))
+       
+       
+       # Laplacian quadratic penalty
+       
+      
+       
+       d <-  rowSums(weight)
+       D <-  matrix(0, nrow = length(d), ncol = length(d))
+       diag(D) <- d
+       G <-  D - weight
+       
+       beta_1 = as.matrix(beta_1)
+       
+      R2 = lambda2 *( t(beta_1) %*% G %*% beta_1 )
+ 
+      objective_value <- L + R1 + R2
+      
+      return(objective_value)
+    }
+     
+  result <- optim(par = initial_value, fn = objective_function, method = "BFGS")
+  
+  beta_result <- beta_build(result, X , Y)
+  
+  beta_1 <- beta_result$beta_1[,1]
+  beta_1_p <- beta_result$beta_1[,2]
+  
+  
+   }
+  
+   beta_result$beta_removed <- beta_rm
+  
+   
+    return(beta_result) 
 }
     
-
-
 
 
 
 ```
   
   
+## optim method
+```{r}
 
+BFGS <- function(fn, par, control = list()) {
+  maxit <- control$maxit
+  tol <- control$tol
+  
+  n <- length(par)
+  H <- diag(n)
+  x <- par
+  fval <- fn(x)
+  
+  for (iter in 1:maxit) {
+    grad <- grad(fn, x)
+    p <- -solve(H + diag(n) * 1e-6) %*% grad  # Add regularization to Hessian inversion
+    lambda <- 1
+    
+    while (fn(x + lambda * p) > fval + 0.5 * lambda * sum(grad * p)) {
+      lambda <- lambda / 2
+    }
+    
+    x_new <- x + lambda * p
+    grad_new <- grad(fn, x_new)
+    s <- x_new - x
+    y <- grad_new - grad
+    
+    Hy <- H %*% y
+    yHy <- t(y) %*% Hy
+    
+    if (yHy > 0) {
+      rho <- as.numeric(1 / yHy)
+      u <- s - H %*% y
+      v <- rho * (u %*% t(u))
+      
+      H <- H + v
+    }
+    
+    x <- x_new
+    dif <- fn(x)-fval
+    fval <- fn(x)
+    
+    if (max(abs(grad)) < tol || kappa(H) > 1e14)  {
+      break
+    }
+  }
+  
+  result <- list(par = x, value = fval, convergence = iter < maxit)
+  return(result)
+}
 
+```
 
 
 
@@ -381,11 +540,12 @@ SVC_model4 <- function(obj,
 ## function of ploting
 ```{r}
 
-plot_point <- function(data_all,data_L,data_E){
+plot_point <- function(data_all,data_Zero, data_L,data_E){
   
 ggplot() +
   geom_point(data = data_all, aes(x = x, y = y, color = color), size = 1.5) +
-  scale_color_gradient2(low ="green", mid = "yellow", high ="red", midpoint = 0,limits = c(-3,+3 )) +
+  scale_color_gradient2(low ="green", mid = "yellow", high ="red", midpoint = 0,limits = c(-1.5,+1.5))  +
+  geom_point(data = data_Zero, aes(x = x, y = y), color = "gray32", size = 1.5) +
   geom_point(data = data_L, aes(x = x, y = y), color = "darkgray", size = 1) +
   geom_point(data = data_E, aes(x = x, y = y), color = "lightgray", size = 1) +
 
@@ -396,10 +556,12 @@ ggplot() +
 
 result_plot <- function (df, coefficients,receiver,sender, adjust = F ){
   
-  data_1 <- data.frame(df$meta$locat$x[df$meta$cell_type == receiver], df$meta$locat$y[df$meta$cell_type == receiver])
-
-  data_2 <- as.matrix(coefficients$beta_1, ncol =1)
-  data_3 <- coefficients$beta_0
+  data_xy <- data.frame(df$meta$locat$x[df$meta$cell_type == receiver], df$meta$locat$y[df$meta$cell_type == receiver])
+  
+  data_1<- data_xy[!coefficients$beta_removed, ]
+  
+  data_2 <- as.matrix(coefficients$beta_1[,1], ncol =1)
+  data_3 <- coefficients$beta_0[1]
   if (!adjust){
   data_deep <-  data_2
   }
@@ -408,18 +570,28 @@ result_plot <- function (df, coefficients,receiver,sender, adjust = F ){
   }
   
   data_all <- data.frame(x =data_1[,1], y = data_1[,2], color = data_deep )
- 
+  data_Zero <- data.frame(x = data_xy[coefficients$beta_removed, 1], y = data_xy[coefficients$beta_removed, 2])
+
   data_lig <- data.frame(x = df$meta$locat$x[df$meta$cell_type == sender], y =  df$meta$locat$y[df$meta$cell_type == sender])
   
-
+  
 data_els <- data.frame(
   x = df$meta$locat$x[df$meta$cell_type != sender & df$meta$cell_type != receiver],
   y = df$meta$locat$y[df$meta$cell_type != sender & df$meta$cell_type != receiver]
 )
 
-plot_point(data_all, data_lig,data_els)
+plot_point(data_all,data_Zero, data_lig,data_els)
   
 }
+
+
+```
+
+```{r}
+#include <Rcpp.h>
+#include <cmath>
+
+
 
 
 ```

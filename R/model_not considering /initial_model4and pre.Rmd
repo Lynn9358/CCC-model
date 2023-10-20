@@ -581,37 +581,3 @@ initial_params <- matrix(rep(0, length(Y) + 2), ncol = 1)
 ```
 
 
-```{r}
-## plot the result
-
-data_all<- vector("list",2)
-
-#location
-data_1 <- data.frame(df2$meta$locat$x[df$meta$cell_type == 1], df2$meta$locat$y[df2$meta$cell_type == 1])
-
-# color
-data_2<- rep(0, sum(df2$meta$cell_type == 1))
-data_[] <- 
-  
-  
-data_3 <- 1
-data_deep <-  data_2 + data_3 
-
-#list of location
-data_all <- data.frame(x =data_1[,1], y = data_1[,2], color = data_deep )
-
-data_lig <- data.frame(x = df2$meta$locat$x[df2$meta$cell_type == 2], y = df2$meta$locat$y[df2$meta$cell_type == 2])
-
-data_els <- data.frame(
-  x = df2$meta$locat$x[df2$meta$cell_type !=1 & df2$meta$cell_type != 2],
-  y =df2$meta$locat$y[df2$meta$cell_type !=1 & df2$meta$cell_type !=2 ]
-)
-
-
-
-
-
-plot_result(data_all, data_lig,data_els)
-
-
-```

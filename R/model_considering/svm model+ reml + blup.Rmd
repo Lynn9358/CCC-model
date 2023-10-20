@@ -1,0 +1,771 @@
+---
+title: "svm model+reml+blup"
+author: "Wenjing Li"
+date: "2023-10-8"
+output: pdf_document
+---
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(spdep)
+library(RColorBrewer)
+library(ggplot2)
+library(nlme)
+library(minpack.lm)
+```
+
+
+
+
+# Finding Neighbour
+
+## Weight KNN
+```{r}
+## Weighted K-NN for lr pairs
+
+get_lr_wknn <- function(obj,sender,receiver, k){
+  
+  if(!all(c(sender, receiver) %in% unique(obj$meta$cell_type))) {
+    stop("Can not find sender/receiver in the data")}
+  
+  else {
+    
+    #distance matrix
+    
+    distance <- obj$para$dist[obj$meta$cell_type == receiver, obj$meta$cell_type == sender]
+    
+    R <- list()
+    
+    #the indix of receiver
+    R$indices <- as.matrix(t(head(apply(distance, 1, function(x) as.numeric(colnames(distance)[order(x,decreasing = FALSE)])),k)))
+    
+    
+   #the distances of receiver from sender
+    R$distances <- t(head(apply(distance, 1, function(x) sort(x, decreasing = FALSE)), k))
+    
+    weighted_counts <- R$distances
+    percentile_weight <- head(sort(weighted_counts), length(weighted_counts) * 0.3)
+    
+    index_wknn <- t(apply(weighted_counts, 1 , function(x) x %in% percentile_weight))
+    
+     lr_wknn  <- R$indices * index_wknn
+     
+     lr_wknn[lr_wknn == 0 ] <- NA
+     
+     lr_wknn <- cbind(lr_wknn,obj$meta$locat[obj$meta$cell_type == receiver,])
+     
+     
+     name <- c(c(1:k),"X","Y")
+     
+     
+     colnames(lr_wknn) <-  name
+    
+    return(lr_wknn)
+  }
+}
+  
+  
+
+
+```
+
+## create lr index 
+```{r}
+ create_lr_index <- function(lrpair, Nopairadd = TRUE ){
+   if(Nopairadd) {
+    lrpair[,1]<- ifelse(is.na(lrpair[,1]), "0",lrpair[,1] )
+   }
+   
+    A = rep(row.names(lrpair), each = ncol(lrpair)-2 )
+    B = as.vector(t(lrpair[,-c(ncol(lrpair)-1, ncol(lrpair))]))
+    
+    lr_index <- cbind(A,B)
+    
+    lr_index <- lr_index[complete.cases(lr_index),]
+    
+    return(lr_index)
+  }
+
+
+```
+
+
+
+##  plot lr pairs 
+
+
+```{r}
+
+find_row_list_number <- function(lr_index,list_of_lists) {
+         
+       for (i in 1: length(list_of_lists)) {
+          if (all(lr_index %in% list_of_lists[[i]])) {
+                       ind = i 
+                        break
+          }
+       }
+  return(ind)
+}
+
+plot_lr_pair <- function(obj, lr_pair, arrows = T, cluster = list()){
+  #obj = df
+  
+    lr_index <- create_lr_index(lr_pair,Nopairadd = FALSE)
+    
+    lr_uni <- unique(as.vector(lr_index))
+    
+    lr_meta <- obj$meta$locat[lr_uni,]
+    recepter <- obj$meta$cell_type[as.numeric(rownames(lr_pair)[1])]
+    ligand <- obj$meta$cell_type[na.omit(as.numeric(as.matrix(lr_pair)))[1]]
+     
+     
+    celltype <- as.vector(obj$meta$cell_type)
+    ct_index <- as.vector(unique(celltype))
+    color <- match(celltype,ct_index)
+    
+    
+     plot(obj$meta$locat, pch = 19, cex = 0.5, col = ifelse(celltype %in% c(recepter, ligand), color, "grey"))
+
+     text(x= obj$meta$locat$x, y = obj$meta$locat$y, obj$meta$cell, pos = 3)
+  
+
+for (i in 1:nrow(lr_index)) {
+      #sender
+       A = lr_index[i,2]
+      #receiver
+      B = lr_index[i,1]
+      
+      x1 <- lr_meta[rownames(lr_meta) == A, 1]
+      y1 <- lr_meta[rownames(lr_meta) == A, 2]
+      x2 <- lr_meta[rownames(lr_meta) == B, 1]
+      y2 <- lr_meta[rownames(lr_meta) == B, 2]
+      
+      
+if (length(cluster) == 0 ){
+if (arrows)  {
+   arrows(x1, y1, x2, y2, length = 0.1)
+}
+else{
+    lines(c(x1, x2), c(y1, y2), col = 1 )
+}
+      
+}
+  else{
+    
+    if (arrows)  {
+   arrows(x1, y1, x2, y2, length = 0.1, col =as.numeric(find_row_list_number(lr_index[i, ], cluster)))
+     }
+else{
+      lines(c(x1, x2), c(y1, y2), col = as.numeric(find_row_list_number(lr_index[i, ],cluster)))
+     }
+  }
+  
+}
+}
+
+
+
+
+    
+    
+```
+
+
+## find neighbourhoods
+```{r}
+
+find_network <- function(obj, lr_pairs, plot = TRUE) {
+  
+  
+  find_neighbor <- function(lr_pairs, Nopairadd = TRUE){
+    
+  lr_index <- create_lr_index(lr_pairs)
+  neighbor <- list()
+  
+  for (value in unique(lr_index[, 1])) {
+    # Extract rows with the current value
+    rows <- lr_index[lr_index[,1] == value, ]
+    # Append the rows to the result list as a matrix
+    neighbor[[length(neighbor) + 1]] <- matrix(rows, ncol = 2, byrow = FALSE)
+  }
+  
+  # Return the result
+  return(neighbor)
+}
+  
+  if(plot){
+    
+    neighbor_plot <- find_neighbor(lr_pairs,Nopairadd = FALSE)
+    plot_lr_pair(obj, lr_pairs, arrows = T, cluster = neighbor_plot)
+    
+  }
+  
+  
+
+  network <- find_neighbor(lr_pairs)
+  return(network)
+  
+}
+
+
+
+
+```
+
+
+
+
+
+
+# SVC model
+##dataset generating
+
+```{r}
+ build_dataset <- function(df, lr,recepter,ligand ) {
+    
+   
+    lr_network <- find_network(df, lr,plot = FALSE)
+      recepter_list <- df$meta$gene[,colnames(df$meta$gene) == recepter]
+      ligand_list <- df$meta$gene[,colnames(df$meta$gene) == ligand]
+       dataset <- vector("list", length(lr_network))  
+  
+    for (j in 1:length(lr_network)) {
+      single_network <- lr_network[[j]]
+      
+      for (i in 1:(length(single_network)/2)) {
+        
+        if (length(single_network) == 2) {
+          receptor_expression <- ifelse(is.na(recepter_list[as.numeric(single_network[1])]), 0, recepter_list[as.numeric(single_network[1])])
+          ligand_expression <- ifelse(is.na(ligand_list[as.numeric(single_network[2])]) || single_network[2] == 0 ,0,ligand_list[as.numeric(single_network[2])])
+          
+        } else {
+          row <- single_network[i, ]
+          receptor_expression <- ifelse(is.na(recepter_list[as.numeric(row[1])]), 0 , recepter_list[as.numeric(row[1])] )
+          
+          ligand_expression <- ifelse(is.na(ligand_list[as.numeric(row[2])]) || row[2] == 0 , 0, ligand_list[as.numeric(row[2])])
+        }
+        
+        
+        
+         locat_x <- df$meta$locat$x[as.numeric(single_network[1])]
+         locat_y <- df$meta$locat$y[as.numeric(single_network[1])]
+         id <- df$meta$cell[as.numeric(single_network[1])]
+        
+        new_expression_row <- c(id, receptor_expression, ligand_expression, locat_x, locat_y )
+        
+        
+        dataset[[j]] <- rbind(dataset[[j]], new_expression_row)
+        
+        
+      }
+    }
+        
+    
+    ds <- dataset
+    means <- lapply(ds, colMeans)
+    
+    ds_matrix<- do.call(rbind, means)
+    colnames(ds_matrix) <- c("id","receptor","ligand","location-x","location-y")
+    ds_matrix <- as.data.frame(ds_matrix)
+    
+    ds_matrix = ds_matrix[ds_matrix[,2]!= 0 & ds_matrix[,3]!= 0, ]
+   
+   return(ds_matrix)
+  }
+
+
+
+
+
+```
+
+
+#svm + reml + blup + BFGS
+```{r}
+ # svm + reml +blup + BFGS
+# Spatial vary model +  Restricted maximum likelihood + (empirical) Best Linear Unbiased Predictor +  royden–Fletcher–Goldfarb–Shanno algorithm
+ 
+SVC_model6 <- function(obj,
+                       lr,
+                       recepter,
+                       ligand,
+                       lambda1 = 0, 
+                       lambda2 = 0,
+                       phi = 1,
+                       sigma = 1) {
+  
+   dataset <- build_dataset(obj, lr, recepter,ligand)
+   
+    Y = dataset[,2]
+    X_1 = dataset[,3]
+    X_0 <- as.matrix(rep(1, nrow(dataset)),ncol = 1)
+    X<- cbind(X_0, X_1)
+    Z = diag(X_1)
+    
+   Dis = as.matrix(dist(dataset[,c(4,5)]))
+  
+   receiver <- obj$meta$cell_type[as.numeric(rownames(lr))[1]]
+   sender <- obj$meta$cell_type[na.omit(as.numeric(as.matrix(lr)))[1]]
+   
+   G <- exp(- phi * Dis)
+   R <- diag(rep(sigma, length(Y)))
+   sigma_c = Z %*% G %*% Z + R
+   
+  
+   #opt method 1 
+   
+  objective_function <- function(beta_b) {
+     init_value <- matrix(beta_b, ncol = 1)
+     beta =  init_value[c(1,2)]
+     b = init_value[-c(1,2)]
+    
+     l = 1/2* (t(Y -X %*% beta - Z %*% b) %*% solve(sigma_c) %*% (Y -X %*% beta - Z %*% b))
+      
+     R1 <- lambda1 * sum(abs(b))
+     
+     d = rowSums(G)
+     D = diag(d)
+     W <-  D - G
+
+     R2 <- lambda2 *( t(b) %*% W %*% b )
+     
+      objective_value <- l + R1 + R2
+    
+      return(objective_value)
+    }
+     
+     result <- optim(par = matrix(rep(0,length(Y) + 2), ncol = 1), fn = objective_function, method = "BFGS")
+     
+ 
+     
+     list_result = list()
+     
+     
+     list_result$likelihood_score <- 1/2* (t(as.matrix(Y) - X %*% result$par[c(1,2)] - Z %*% result$par[-c(1,2)] )) %*% solve(sigma_c) %*% (as.matrix(Y) -X %*% result$par[c(1,2)] - Z %*% result$par[-c(1,2)] )
+     
+     list_result$value <- result$value
+     
+     
+     #calculation of p-value
+     
+     mu = result$par[1]
+     beta_0 = result$par[2]
+     lr_mu =  1/2 * (t(as.matrix(Y) - as.matrix(X_1 * beta_0) - Z %*% result$par[-c(1,2)] )) %*% solve(sigma_c) %*% (as.matrix(Y) - as.matrix(X_1 * beta_0) - Z %*% result$par[-c(1,2)])
+     p_value_mu <- pchisq(abs(2*(lr_mu-  list_result$likelihood_score)), df = 1, lower.tail = FALSE)
+
+     lr_beta0 = 1/2* (t(as.matrix(Y) - as.matrix(X_0 %*% mu) - Z %*% result$par[-c(1,2)] )) %*% solve(sigma_c) %*% (as.matrix(Y) - as.matrix(X_0 %*% mu)  - Z %*% result$par[-c(1,2)]  )
+     
+     p_value_beta_0 <- pchisq(abs(2*(lr_beta0 -  list_result$likelihood_score)), df = 1, lower.tail = FALSE)
+
+     beta = matrix( c(mu, beta_0,p_value_mu, p_value_beta_0 ),ncol = 2)
+     colnames(beta) = c("value","p_value")
+     rownames(beta) = c("beta_0","beta_1")
+     
+     list_result$beta = beta
+     
+     list_result$b = result$par[-c(1,2)]
+     
+    list_result$convergence <- result$convergence
+    
+    return(list_result)
+     
+}
+
+
+
+
+```
+  
+
+
+#svm + reml + blup + L-BFGS-B + nnls
+```{r}
+ # svm + reml +blup + em
+# Spatial vary model +  Restricted maximum likelihood + (empirical) Best Linear Unbiased Predictor + Limited-memory BFGS + Non-Negative Least Squares 
+ 
+SVC_model7 <- function(obj,
+                       lr,
+                       recepter,
+                       ligand,
+                       lambda1 = 0, 
+                       lambda2,
+                       phi = 1,
+                       sigma = 1) {
+  
+   dataset <- build_dataset(obj, lr, recepter,ligand)
+  
+    Y = dataset[,2]
+    X_1 = dataset[,3]
+    X_0 <- as.matrix(rep(1, nrow(dataset)),ncol = 1)
+    X<- cbind(X_0, X_1)
+    Z = diag(X_1)
+    
+   Dis = as.matrix(dist(dataset[,c(4,5)]))
+  
+   receiver <- obj$meta$cell_type[as.numeric(rownames(lr))[1]]
+   sender <- obj$meta$cell_type[na.omit(as.numeric(as.matrix(lr)))[1]]
+   
+   G <- exp(- phi * Dis)
+   R <- diag(rep(sigma, length(Y)))
+   sigma_c = Z %*% G %*% Z + R
+   
+   
+   
+#   l = 1/2(t(Y -X %*% beta - Z %*% b) %*% solve(sigma_c) %*% (Y -X %*% beta - Z %*% b))
+  
+#  iterantion 
+#  beta = solve( t(X) %*% solve(sigma_c) %*% X ) %*% ( t(X) %*% solve(sigma_c) %*% (Y - Z %*% b))
+#   b =  G %*% Z %*% solve(sigma_c) %*% (Y - X %*% beta )
+
+   #opt method 1 
+   
+  objective_function <- function(beta_b) {
+     init_value <- matrix(beta_b, ncol = 1)
+     beta =  init_value[c(1,2)]
+     b = init_value[-c(1,2)]
+    
+     l = 1/2* (t(Y -X %*% beta - Z %*% b) %*% solve(sigma_c) %*% (Y -X %*% beta - Z %*% b))
+      
+     R1 <- lambda1 * sum(abs(b))
+     
+     d = rowSums(G)
+     D = diag(d)
+     W <-  D - G
+
+     R2 <- lambda2 *( t(b) %*% W %*% b )
+     
+      objective_value <- l + R1 + R2
+    
+      return(objective_value)
+    }
+     
+     result <- optim(par = matrix(rep(0,length(Y) + 2), ncol = 1), fn = objective_function, lower =0 ,method = "L-BFGS-B")
+     
+     list_result = list()
+     list_result$beta=result$par[c(1,2)]
+     list_result$b = result$par[-c(1,2)]
+     
+     list_result$likelihood_score <- 1/2* (t(as.matrix(Y) - X %*% list_result$beta - Z %*% list_result$b)) %*% solve(sigma_c) %*% (as.matrix(Y) -X %*% list_result$beta - Z %*% list_result$b)
+     
+    list_result$value <- result$value
+    
+    list_result$convergence <- result$convergence
+    
+    return(list_result)
+     
+}
+
+
+
+
+```
+
+
+#svm + reml + blup +  iternate for beta and b
+```{r}
+ # svm + reml +blup + em
+# Spatial vary model +  Restricted maximum likelihood + (empirical) Best Linear Unbiased Predictor + Limited-memory BFGS + Non-Negative Least Squares 
+ 
+SVC_model8 <- function(obj,
+                       lr,
+                       recepter,
+                       ligand,
+                       lambda1 = 0, 
+                       lambda2 = 0,
+                       phi = 1,
+                       sigma = 1) {
+  
+   dataset <- build_dataset(obj, lr, recepter,ligand)
+   
+    Y = dataset[,2]
+    X_1 = dataset[,3]
+    X_0 <- as.matrix(rep(1, nrow(dataset)),ncol = 1)
+    X<- cbind(X_0, X_1)
+    Z = diag(X_1)
+    
+   Dis = as.matrix(dist(dataset[,c(4,5)]))
+  
+   receiver <- obj$meta$cell_type[as.numeric(rownames(lr))[1]]
+   sender <- obj$meta$cell_type[na.omit(as.numeric(as.matrix(lr)))[1]]
+   
+   G <- exp(- phi * Dis)
+   R <- diag(rep(sigma, length(Y)))
+   sigma_c = Z %*% G %*% Z + R
+   
+   
+   
+#    l = 1/2(t(Y -X %*% beta - Z %*% b) %*% solve(sigma_c) %*% (Y -X %*% beta - Z %*% b))
+  
+#  iterantion 
+#  beta = solve( t(X) %*% solve(sigma_c) %*% X ) %*% ( t(X) %*% solve(sigma_c) %*% (Y - Z %*% b))
+#   b =  G %*% Z %*% solve(sigma_c) %*% (Y - X %*% beta )
+
+   #opt method (iteration)
+   beta = rep(0,2)
+   b = rep(0,length(Y))
+   xi = Inf
+   while (xi  > 1e-10 ) {
+    beta_old = beta
+    b_old = b
+    b = G %*% Z %*% solve(sigma_c) %*% (Y - X %*% beta)
+    browser()
+    beta = solve(t(X) %*% solve(sigma_c) %*% X) %*% (t(X) %*% solve(sigma_c) %*% (Y - Z %*% b))
+    xi = max(sum((beta - beta_old)^2), sum((b - b_old)^2))
+#    score =1/2* (t(as.matrix(Y) - X %*% beta - Z %*% b)) %*% solve(sigma_c) %*% (as.matrix(Y) -X %*% beta - Z %*% b)
+    
+   }
+   
+
+     list_result = list()
+     
+     list_result$likelihood_score <- 1/2* (t(as.matrix(Y) - X %*% beta - Z %*% b )) %*% solve(sigma_c) %*% (as.matrix(Y) -X %*% beta - Z %*% b)
+     
+     
+     #calculation of p-value
+     
+     mu = beta[1]
+     beta_0 = beta[2]
+     
+     lr_mu =  1/2 * (t(as.matrix(Y) - as.matrix(X_1 * beta_0) - Z %*% b )) %*% solve(sigma_c) %*% (as.matrix(Y) - as.matrix(X_1 * beta_0) - Z %*% b)
+     
+     p_value_mu <- pchisq(abs(2*(lr_mu-  list_result$likelihood_score)), df = 1, lower.tail = FALSE)
+
+     lr_beta0 = 1/2* (t(as.matrix(Y) - as.matrix(X_0 %*% mu) - Z %*% b )) %*% solve(sigma_c) %*% (as.matrix(Y) - as.matrix(X_0 %*% mu)  - Z %*% b )
+     
+     p_value_beta_0 <- pchisq(abs(2*(lr_beta0 -  list_result$likelihood_score)), df = 1, lower.tail = FALSE)
+
+     beta = matrix( c(mu, beta_0,p_value_mu, p_value_beta_0 ),ncol = 2)
+     colnames(beta) = c("value","p_value")
+     rownames(beta) = c("beta_0","beta_1")
+     
+     list_result$beta = beta
+     
+     list_result$b = b
+     
+    
+    return(list_result)
+     
+}
+
+
+
+
+```
+
+
+
+#svm + reml + blup +  iternate for nnls for b
+```{r}
+ # svm + reml +blup + em
+# Spatial vary model +  Restricted maximum likelihood + (empirical) Best Linear Unbiased Predictor + Limited-memory BFGS + Non-Negative Least Squares 
+ 
+SVC_model9 <- function(obj,
+                       lr,
+                       recepter,
+                       ligand,
+                       lambda1 = 0, 
+                       lambda2 = 0 ,
+                       phi = 1,
+                       sigma = 1) {
+  
+   dataset <- build_dataset(obj, lr, recepter,ligand)
+   
+    Y = dataset[,2]
+    X_1 = dataset[,3]
+    X_0 <- as.matrix(rep(1, nrow(dataset)),ncol = 1)
+    X<- cbind(X_0, X_1)
+    Z = diag(X_1)
+    
+   Dis = as.matrix(dist(dataset[,c(4,5)]))
+  
+   receiver <- obj$meta$cell_type[as.numeric(rownames(lr))[1]]
+   sender <- obj$meta$cell_type[na.omit(as.numeric(as.matrix(lr)))[1]]
+   
+   G <- exp(- phi * Dis)
+   R <- diag(rep(sigma, length(Y)))
+   sigma_c = Z %*% G %*% Z + R
+   
+   
+   
+#    l = 1/2(t(Y -X %*% beta - Z %*% b) %*% solve(sigma_c) %*% (Y -X %*% beta - Z %*% b))
+  
+#  iterantion 
+#  beta = solve( t(X) %*% solve(sigma_c) %*% X ) %*% ( t(X) %*% solve(sigma_c) %*% (Y - Z %*% b))
+#   b =  G %*% Z %*% solve(sigma_c) %*% (Y - X %*% beta )
+
+   #opt method (iteration)
+   beta = rep(0,2)
+   b = rep(0,length(Y))
+   xi  = Inf
+   while (xi  > 0.1) {
+    beta_old = beta
+    b_old = b
+    b = coef(nnls( sigma_c %*% solve(Z) %*% solve(G),(Y - X %*% beta )))
+    beta = solve(t(X) %*% solve(sigma_c) %*% X) %*% (t(X) %*% solve(sigma_c) %*% (Y - Z %*% b))
+    
+    
+     xi = max(sum((beta - beta_old)^2), sum((b - b_old)^2))
+#    score =1/2* (t(as.matrix(Y) - X %*% beta - Z %*% b)) %*% solve(sigma_c) %*% (as.matrix(Y) -X %*% beta - Z %*% b)
+    
+}
+
+      list_result = list()
+     
+     list_result$likelihood_score <- 1/2* (t(as.matrix(Y) - X %*% beta - Z %*% b )) %*% solve(sigma_c) %*% (as.matrix(Y) -X %*% beta - Z %*% result$b)
+     
+     
+     #calculation of p-value
+     
+     mu = beta[1]
+     beta_0 = beta[2]
+     
+     lr_mu =  1/2 * (t(as.matrix(Y) - as.matrix(X_1 * beta_0) - Z %*% b )) %*% solve(sigma_c) %*% (as.matrix(Y) - as.matrix(X_1 * beta_0) - Z %*% result$b)
+     
+     p_value_mu <- pchisq(abs(2*(lr_mu-  list_result$likelihood_score)), df = 1, lower.tail = FALSE)
+
+     lr_beta0 = 1/2* (t(as.matrix(Y) - as.matrix(X_0 %*% mu) - Z %*% b )) %*% solve(sigma_c) %*% (as.matrix(Y) - as.matrix(X_0 %*% mu)  - Z %*% b )
+     
+     p_value_beta_0 <- pchisq(abs(2*(lr_beta0 -  list_result$likelihood_score)), df = 1, lower.tail = FALSE)
+
+     beta = matrix( c(mu, beta_0,p_value_mu, p_value_beta_0 ),ncol = 2)
+     colnames(beta) = c("value","p_value")
+     rownames(beta) = c("beta_0","beta_1")
+     
+     list_result$beta = beta
+     
+     list_result$b = b
+     
+    return(list_result)
+     
+}
+
+```
+
+
+
+
+
+#svm + reml + blup + set constrains only on b( not on beta)
+```{r}
+ # svm + reml +blup + em
+# Spatial vary model +  Restricted maximum likelihood + (empirical) Best Linear Unbiased Predictor + Limited-memory BFGS + Non-Negative Least Squares 
+ 
+SVC_model10 <- function(obj,
+                       lr,
+                       recepter,
+                       ligand,
+                       lambda1, 
+                       lambda2,
+                       phi = 1,
+                       sigma = 1) {
+  
+   dataset <- build_dataset(obj, lr, recepter,ligand)
+   dataset <- dataset[dataset[,2] != 0 & dataset[,3] != 0  ,]
+    
+    Y = dataset[,2]
+    X_1 = dataset[,3]
+    X_0 <- as.matrix(rep(1, nrow(dataset)),ncol = 1)
+    X<- cbind(X_0, X_1)
+    Z = diag(X_1)
+    
+   Dis = as.matrix(dist(dataset[,c(4,5)]))
+  
+   receiver <- obj$meta$cell_type[as.numeric(rownames(lr))[1]]
+   sender <- obj$meta$cell_type[na.omit(as.numeric(as.matrix(lr)))[1]]
+   
+   G <- exp(- phi * Dis)
+   R <- diag(rep(sigma, length(Y)))
+   sigma_c = Z %*% G %*% Z + R
+   
+   
+   
+#    l = 1/2(t(Y -X %*% beta - Z %*% b) %*% solve(sigma_c) %*% (Y -X %*% beta - Z %*% b))
+  
+#  iterantion 
+#  beta = solve( t(X) %*% solve(sigma_c) %*% X ) %*% ( t(X) %*% solve(sigma_c) %*% (Y - Z %*% b))
+#  b =  G %*% Z %*% solve(sigma_c) %*% (Y - X %*% beta )
+
+   #opt method (iteration)
+   beta = rep(0,2)
+   b = rep(0,length(Y))
+   constrained_indices <- c(3: length(Y))
+ #  lower_bounds <- ifelse(1:length(Y) %in% constrained_indices, 0, -Inf)
+  # upper_bounds <- Inf
+  # constraints <- list(upper = upper_bounds, lower = lower_bounds)
+   
+    objective_function <- function(beta_b) {
+     init_value <- matrix(beta_b, ncol = 1)
+     beta =  init_value[c(1,2)]
+     b = init_value[-c(1,2)]
+    
+     l = 1/2* (t(Y -X %*% beta - Z %*% b) %*% solve(sigma_c) %*% (Y -X %*% beta - Z %*% b))
+      
+     R1 <- lambda1 * sum(abs(b))
+     
+     d = rowSums(G)
+     D = diag(d)
+     W <-  D - G
+
+     R2 <- lambda2 *( t(b) %*% W %*% b )
+     
+      objective_value <- l + R1 + R2
+    
+      return(objective_value)
+    }
+     
+   params <- matrix(rep(0,length(Y) + 2), ncol = 1)
+   # start value must be in the interior of the feasible region, but the minimum may be on the boundary.
+   params[3: length(params)] <- 1
+ 
+   rep(0, length(Y)+2) 
+   U = diag(length(Y)+2) 
+   U[c(1,2),] = 0 
+   C = rep(0, length(Y)+2 )
+    C[c(1,2)] = -1
+   
+   result <- constrOptim(theta = params, f = objective_function, grad = NULL,
+                        ui = U, ci = C )
+
+         
+     list_result = list()
+     
+     
+     list_result$likelihood_score <- 1/2* (t(as.matrix(Y) - X %*% result$par[c(1,2)] - Z %*% result$par[-c(1,2)] )) %*% solve(sigma_c) %*% (as.matrix(Y) -X %*% result$par[c(1,2)] - Z %*% result$par[-c(1,2)] )
+     
+     list_result$value <- result$value
+     
+     
+     #calculation of p-value
+     
+     mu = result$par[1]
+     beta_0 = result$par[2]
+     lr_mu =  1/2 * (t(as.matrix(Y) - as.matrix(X_1 * beta_0) - Z %*% result$par[-c(1,2)] )) %*% solve(sigma_c) %*% (as.matrix(Y) - as.matrix(X_1 * beta_0) - Z %*% result$par[-c(1,2)])
+     p_value_mu <- pchisq(abs(2*(lr_mu-  list_result$likelihood_score)), df = 1, lower.tail = FALSE)
+
+     lr_beta0 = 1/2* (t(as.matrix(Y) - as.matrix(X_0 %*% mu) - Z %*% result$par[-c(1,2)] )) %*% solve(sigma_c) %*% (as.matrix(Y) - as.matrix(X_0 %*% mu)  - Z %*% result$par[-c(1,2)]  )
+     
+     p_value_beta_0 <- pchisq(abs(2*(lr_beta0 -  list_result$likelihood_score)), df = 1, lower.tail = FALSE)
+
+     beta = matrix( c(mu, beta_0,p_value_mu, p_value_beta_0 ),ncol = 2)
+     colnames(beta) = c("value","p_value")
+     rownames(beta) = c("beta_0","beta_1")
+     
+     list_result$beta = beta
+     
+     list_result$b = result$par[-c(1,2)]
+     
+    list_result$value <- result$value
+    
+    list_result$convergence <- result$message
+    
+    return(list_result)
+     
+   
+   
+}
+
+
+
+
+```
+

@@ -1,0 +1,75 @@
+```{r}
+library(Giotto)
+results_folder = '//Ruben_Seagate/Dropbox (Personal)/Projects/GC_lab/Ruben_Dries/190225_spatial_package/Results/Visium/Brain/201226_results/'
+python_path = NULL
+if(is.null(python_path)) {
+    installGiottoEnvironment()
+}
+```
+
+```{r}
+instrs = createGiottoInstructions(save_plot = TRUE,
+              show_plot = FALSE,
+              save_dir = results_folder,
+              python_path = python_path)
+
+expr_path = paste0(results_folder, "osmFISH_prep_expression.txt")
+loc_path = paste0(results_folder, "osmFISH_prep_cell_coordinates.txt")
+meta_path = paste0(results_folder,"osmFISH_prep_cell_metadata.txt")
+
+
+```
+
+```{r}
+## create
+osm_test <- createGiottoObject(raw_exprs = expr_path,
+              spatial_locs = loc_path,
+              instructions = instrs)
+
+showGiottoInstructions(osm_test)
+
+## add field annotation
+metadata = data.table::fread(file = meta_path)
+osm_test = addCellMetadata(osm_test, new_metadata = metadata,
+           by_column = T, column_cell_ID = 'CellID')
+## filter
+osm_test <- filterGiotto(gobject = osm_test,
+         expression_threshold = 1,
+         gene_det_in_min_cells = 10,
+         min_det_genes_per_cell = 10,
+         expression_values = c('raw'),
+         verbose = T)
+
+## normalize
+# 1. standard z-score way
+osm_test <- normalizeGiotto(gobject = osm_test)
+
+# 2. osmFISH way
+raw_expr_matrix = osm_test@raw_exprs
+norm_genes = (raw_expr_matrix/rowSums_giotto(raw_expr_matrix)) * nrow(raw_expr_matrix)
+norm_genes_cells = t_giotto((t_giotto(norm_genes)/colSums_giotto(norm_genes)) * ncol(raw_expr_matrix))
+osm_test@custom_expr = norm_genes_cells
+
+## add gene & cell statistics
+osm_test <- addStatistics(gobject = osm_test)
+
+## add gene & cell statistics
+osm_test <- addStatistics(gobject = osm_test)
+
+# save according to giotto instructions
+spatPlot(gobject = osm_test, cell_color = 'ClusterName', point_size = 1.5,
+    save_param = list(save_name = '2_a_original_clusters'))
+
+
+
+```
+
+```{r}
+spatPlot(gobject = osm_test, cell_color = 'Region',
+    save_param = list(save_name = '2_b_original_regions'))
+
+spatPlot(gobject = osm_test, cell_color = 'ClusterID',
+ save_param = list(save_name = '2_c_clusterID'))
+
+
+```

@@ -7,7 +7,7 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
+install.packages("dplyr")
 library("dplyr")
 ```
 
@@ -89,26 +89,26 @@ df$meta$locat <- rbind(df$meta$locat,location)
 cell_list2 <- cell_list + 100
 df$meta$gene <- rbind(df$meta$gene, matrix(rep(0,200), ncol =2))
 
-# first Quadrant
+# first Quadrant( beta_1 = 1)
 gene1_1<- df$meta$gene[cell_list[,1],1]
 df$meta$gene[cell_list2[,1],2] =  (gene1_1 -1 )/2
 #+ rnorm(n = 100, mean = 0, sd = 0.1)
 
-# Second Quadrant
+# Second Quadrant( beta_1 = 0)
 gene1_2<- df$meta$gene[cell_list[,2],1]
 df$meta$gene[cell_list2[,2],2] =  gene1_2 -1
 #+ rnorm(n = 100, mean = 0, sd = 0.1)
   
-# Third Quadrant
+# Third Quadrant( beta_1 = -1)
 gene1_3<- df$meta$gene[cell_list[,3],1]
-df$meta$gene[cell_list[,3],1] <- 0
+df$meta$gene[cell_list[,3],1] <- 1
 df$meta$gene[cell_list2[,3],2] = gene1_3
 
 
 
 #+ rnorm(n = 100, mean = 0, sd = 0.1)
 
-# Fourth Quadrant
+# Fourth Quadrant( beta_1 = 0)
 gene1_4<- df$meta$gene[cell_list[,4],1]
 df$meta$gene[cell_list2[,4],2] =  gene1_4 -1
 
@@ -209,12 +209,118 @@ lr_index_example2 <- create_lr_index(lr_example2)
 
 ##  plot lr pairs 
 lr_pair2 <- plot_lr_pair(df2, lr_example2)
+
+## find neighbourhoods
+find_network(df2,lr_example2)
 ```
 
 
-```
+
+
+
+# SVC model
+
+```{r}
+## dataset generating
+
+dataset2 <- build_dataset(df2, lr_example2,"gene1","gene2")
+
+## SVC model
+debug(SVC_model4)
+
+
+initial_params <- matrix(rep(0, nrow(dataset2) + 2), ncol = 1)
+
+
+ 
+
+model1 <- SVC_model4(df2, lr_example2, 
+                          recepter = "gene1",
+                           ligand = "gene2",
+                          lambda1 = 0,
+                           lambda2 = 0)
+
+
+## result ploting
+
+result_plot(df2, model1, 1, 2, adjust = F)
 
 
 ```
+## result of simulated dataset
+```{r}
+## plot the result
+
+
+#location
+data_1 <- data.frame(df2$meta$locat$x[df2$meta$cell_type == 1], df2$meta$locat$y[df2$meta$cell_type == 1])
+
+# color
+data_2<- rep(0, sum(df2$meta$cell_type == 1))
+data_2[df2$meta$locat$x > 50 & df2$meta$locat$y > 50 & df2$meta$cell_type == 1] <- 1
+data_2[df2$meta$locat$x <= 50 & df2$meta$locat$y <= 50 & df2$meta$cell_type == 1] <- -1
+  data_2<-data_2[c(1:100)]
+
+data_3 <- 1
+data_deep <-  data_2 
+
+#list of location
+data_all <- data.frame(x =data_1[,1], y = data_1[,2], color = data_deep )
+
+data_lig <- data.frame(x = df2$meta$locat$x[df2$meta$cell_type == 2], y = df2$meta$locat$y[df2$meta$cell_type == 2])
+
+data_els <- data.frame(
+  x = df2$meta$locat$x[df2$meta$cell_type !=1 & df2$meta$cell_type != 2],
+  y =df2$meta$locat$y[df2$meta$cell_type !=1 & df2$meta$cell_type !=2 ]
+)
+
+
+
+
+
+plot_point(data_all, data_lig,data_els)
+
+
+```
+
+
+
+
+
+## permutation test
+```{r}
+per_test <- function(limit){
+  time = 0
+  chi2_list <- matrix()
+  while (time < limit ){
+    cat("time is", time,"\n")
+    df <- Null_dataset_gen()
+    
+    lr <- get_lr_wknn(df,
+            sender = 1,
+            receiver = 2,
+            k = 4)
+    
+    result <- SVC_model3(df,lr, lambda1 = 0, lambda2 = 0)
+    
+    
+    chi2 = result$score
+    
+    chi2_list <- as.matrix(rbind(chi2_list, chi2))
+    
+    time = time + 1 
+    
+  }
+  
+  return(chi2_list)
+}
+
+
+list_new <- per_test(50)
+list_50 <- rbind(list_50,list_new)
+
+hist(list_50,breaks = 20,xlim=c(0,100))
+```
+
 
 

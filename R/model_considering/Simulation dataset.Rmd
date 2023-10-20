@@ -1,0 +1,524 @@
+---
+title: "Simulation"
+author: "Wenjing Li"
+date: "2023-08-29"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(mvtnorm)
+library("nnls")
+library(ggplot2)
+library(gplots)
+library(reshape2)
+library(pheatmap)
+library(tidyr)
+library(ComplexHeatmap)
+library(RColorBrewer)
+```
+
+#Null similation
+```{r}
+
+Null_dataset_gen<-function(){
+df <- list()
+df$meta <- list()
+df$meta$cell <- c(1:500)
+df$meta$x <- runif(500, min = 0, max = 100)
+df$meta$y <- runif(500, min = 0, max = 100)
+gene1 <- c(rep(0, 200), rep(1, 100), rep(0, 100), rep(1, 100))
+gene2 <- c(rep(0, 200), rep(0, 100), rep(1, 100), rep(1, 100))
+df$meta$gene <- cbind(gene1,gene2)
+colnames(df$meta$gene) = c(1:2)
+df$meta$locat <- data.frame(df$meta$x,df$meta$y)
+df$para$dist <- as.matrix(dist(df$meta$locat))
+df$meta$cell_type<- sample(1:4, length(df$meta$cell), replace = TRUE)
+return(df)
+}
+df = Null_dataset_gen()
+```
+
+
+#Simulation with known variable
+```{r}
+set.seed(1)
+
+Sim_dataset_gen <- function() {
+
+df<- list()
+
+
+# index for ys
+df$meta$cell <- c(1:100)
+x <- seq(5, 100, by = 10)
+y <- seq(5, 100, by = 10)
+df$meta$locat <- expand.grid(x,y)
+colnames(df$meta$locat) <- c("x","y")
+
+gene1 <- runif(100, min = 0, max = 3)
+df$meta$gene <- cbind(gene1 , 0)
+colnames(df$meta$gene) <- c("gene1","gene2")
+df$meta$cell_type <- c(rep(1,100),rep(2,300))
+
+df_data_frame <- as.data.frame(cbind(df$meta$cell,df$meta$locat))
+
+cell_1<- df_data_frame %>%
+  filter(x > 50 & y > 50) %>%
+  select(1) %>%
+  unlist()
+cell_2<- df_data_frame %>%
+  filter(x <= 50 & y > 50) %>%
+  select(1) %>%
+  unlist()
+
+cell_3<- df_data_frame %>%
+  filter(x <= 50 & y <= 50) %>%
+  select(1) %>%
+  unlist()
+
+cell_4<- df_data_frame %>%
+  filter(x > 50 & y <= 50) %>%
+  select(1) %>%
+  unlist()
+
+cell_list <- cbind(cell_1, cell_2,cell_3,cell_4)
+
+
+#index for xs
+#x_1
+df$meta$cell <- c(df$meta$cell,c(101:200))
+x <- seq(5+1, 100+1, by = 10)
+y <- seq(5, 100, by = 10)
+location <- expand.grid(x,y)
+colnames(location) <- c("x","y")
+df$meta$locat <- rbind(df$meta$locat,location)
+cell_list2 <- cell_list + 100
+df$meta$gene <- rbind(df$meta$gene, matrix(rep(0,200), ncol =2))
+
+# first Quadrant( beta_1 = 1)
+gene1_1<- df$meta$gene[cell_list[,1],1]
+df$meta$gene[cell_list2[,1],2] =  (gene1_1 -1 )/2
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+
+# Second Quadrant( beta_1 = 0)
+gene1_2<- df$meta$gene[cell_list[,2],1]
+df$meta$gene[cell_list2[,2],2] =  gene1_2 -1
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+  
+# Third Quadrant( beta_1 = -1)
+gene1_3<- df$meta$gene[cell_list[,3],1]
+df$meta$gene[cell_list[,3],1] <- 1
+df$meta$gene[cell_list2[,3],2] = gene1_3
+
+
+
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+
+# Fourth Quadrant( beta_1 = 0)
+gene1_4<- df$meta$gene[cell_list[,4],1]
+df$meta$gene[cell_list2[,4],2] =  gene1_4 -1
+
+
+
+
+
+
+#x_2
+
+df$meta$cell <- c(df$meta$cell,c(201:300))
+x <- seq(5, 100, by = 10)
+y <- seq(5+1, 100+1, by = 10)
+location <- expand.grid(x,y)
+colnames(location) <- c("x","y")
+df$meta$locat <- rbind(df$meta$locat,location)
+cell_list3 <- cell_list + 200
+df$meta$gene <- rbind(df$meta$gene, matrix(rep(0,200), ncol =2))
+
+# first Quadrant
+df$meta$gene[cell_list3[,1],2] = (gene1_1 -1 )/2
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+
+# Second Quadrant
+df$meta$gene[cell_list3[,2],2] = gene1_2 -1
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+  
+# Third Quadrant
+df$meta$gene[cell_list3[,3],2] = gene1_3
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+
+# Fourth Quadrant
+df$meta$gene[cell_list3[,4],2] =  gene1_4 -1 
+
+
+
+
+
+#x_3
+df$meta$cell <- c(df$meta$cell,c(301:400))
+x <- seq(5, 100, by = 10)
+y <- seq(5-1, 100-1, by = 10)
+location <- expand.grid(x,y)
+colnames(location) <- c("x","y")
+df$meta$locat <- rbind(df$meta$locat,location)
+cell_list4 <- cell_list + 300
+df$meta$gene <- rbind(df$meta$gene, matrix(rep(0,200), ncol =2))
+
+# first Quadrant
+df$meta$gene[cell_list4[,1],2] = (gene1_1 -1 )/2
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+
+# Second Quadrant
+df$meta$gene[cell_list4[,2],2] = gene1_2 -1
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+  
+# Third Quadrant
+df$meta$gene[cell_list4[,3],2] = gene1_3
+#+ rnorm(n = 100, mean = 0, sd = 0.1)
+
+# Fourth Quadrant
+df$meta$gene[cell_list4[,4],2] = gene1_4 -1 
+
+
+
+df$para$dist <- as.matrix(dist(df$meta$locat))
+
+     
+     return(df)
+}
+
+df2 <- Sim_dataset_gen()
+plot(df2$meta$locat, pch = 19, cex = 0.5, col = ifelse(df2$meta$cell_type %in% "1" , "black", "grey"))
+
+     text(x= df2$meta$locat$x[c(1:100)], y = df2$meta$locat$y[c(1:100)], df2$meta$cell[c(1:100)], pos = 3)
+
+     
+
+
+
+```
+
+## result of simulated dataset
+```{r}
+## plot the result
+
+
+#location
+
+data_xy <- data.frame(df2$meta$locat$x[df2$meta$cell_type == 1], df2$meta$locat$y[df2$meta$cell_type == 1])
+cell_in <- (df2$meta$locat$x > 50 & df2$meta$locat$y > 50) |(df2$meta$locat$x <= 50 & df2$meta$locat$y <= 50)
+cell_in <- (df2$meta$locat$x > 0 & df2$meta$locat$y > 0) |(df2$meta$locat$x <= 50 & df2$meta$locat$y <= 50)
+  
+data_1 <- data_xy[cell_in, ]
+# color
+data_2<- rep(0, length(df2$meta$cell_type))
+data_2[df2$meta$locat$x > 50 & df2$meta$locat$y > 50 & df2$meta$cell_type == 1] <- 1
+data_2[df2$meta$locat$x <= 50 & df2$meta$locat$y <= 50 & df2$meta$cell_type == 1] <- -1
+data_2<-data_2[c(1:100)]
+data_2<-data_2[cell_in]
+  
+data_3 <- 1
+data_deep <-  data_2 + data_3
+
+#list of location
+data_all <- data.frame(x =data_1[,1], y = data_1[,2], color = data_deep )
+data_Zero <- data.frame(x = data_xy[!cell_in, 1], y = data_xy[!cell_in, 2])
+
+data_lig <- data.frame(x = df2$meta$locat$x[df2$meta$cell_type == 2], y = df2$meta$locat$y[df2$meta$cell_type == 2])
+
+data_els <- data.frame(
+  x = df2$meta$locat$x[df2$meta$cell_type !=1 & df2$meta$cell_type != 2],
+  y =df2$meta$locat$y[df2$meta$cell_type !=1 & df2$meta$cell_type !=2 ]
+)
+
+
+
+
+
+plot_point(data_all, data_Zero, data_lig,data_els)
+hist(data_2)
+
+```
+
+
+
+
+
+
+# Finding Neighbour
+
+```{r}
+## Weight KNN
+lr_example2 <- get_lr_wknn(df2,
+        sender = 2 ,
+           receiver = 1,
+          k = 3)
+
+## create lr index 
+lr_index_example2 <- create_lr_index(lr_example2)
+
+
+
+##  plot lr pairs 
+lr_pair2 <- plot_lr_pair(df2, lr_example2)
+
+## find neighbourhoods
+find_network(df2,lr_example2)
+```
+
+
+
+
+
+# test on model4
+
+```{r}
+## dataset generating
+
+dataset2 <- build_dataset(df2, lr_example2,"gene1","gene2")
+
+## SVC model
+
+
+initial_params <- matrix(rep(0, nrow(dataset2) + 2), ncol = 1)
+
+
+ 
+result  <- SVC_model4(df2, lr_example2, 
+                          recepter = "gene1",
+                           ligand = "gene2",
+                          lambda1 = 0,
+                           lambda2 = 0)
+
+
+## result ploting
+result_plot(df2, model1,1, 2, adjust = F)
+
+```
+
+# test on model6
+
+```{r}
+## dataset generating
+
+dataset2 <- build_dataset(df2, lr_example2,"gene1","gene2")
+
+## SVC model
+
+result1  <- SVC_model6(df2, lr_example2, 
+                          recepter = "gene1",
+                           ligand = "gene2",
+                          lambda1 = 0,
+                           lambda2 = 0)
+
+
+result3  <- SVC_model8(df2, lr_example2, 
+                          recepter = "gene1",
+                           ligand = "gene2",
+                          lambda1 = 0,
+                           lambda2 = 0)
+## result ploting
+
+result4 <- SVC_model9(df2, lr_example2, 
+                          recepter = "gene1",
+                           ligand = "gene2",
+                          lambda1 = 0,
+                           lambda2 = 0)
+
+
+
+result5  <- SVC_model10(df2, lr_example2, 
+                          recepter = "gene1",
+                           ligand = "gene2",
+                          lambda1 = 0,
+                           lambda2 = 0)
+```
+
+
+```{r}
+## result ploting
+result_plot(df2, result5, 1, 2, adjust = T)
+
+```
+
+
+
+
+#Simulation with covariance
+```{r}
+
+Null_dataset_gen<-function(){
+df <- list()
+df$meta <- list()
+df$meta$cell <- c(1:500)
+df$meta$x <- runif(500, min = 0, max = 100)
+df$meta$y <- runif(500, min = 0, max = 100)
+gene1 <- c(rep(0, 200), rep(1, 100), rep(0, 100), rep(1, 100))
+gene2 <- c(rep(0, 200), rep(0, 100), rep(1, 100), rep(1, 100))
+df$meta$gene <- cbind(gene1,gene2)
+colnames(df$meta$gene) = c(1:2)
+df$meta$locat <- data.frame(df$meta$x,df$meta$y)
+df$para$dist <- as.matrix(dist(df$meta$locat))
+df$meta$cell_type<- sample(1:4, length(df$meta$cell), replace = TRUE)
+return(df)
+}
+df = Null_dataset_gen()
+## = rmvnorm(1, c(),matrix(c(1,0.8,0.8,1),2,2))
+
+
+```
+
+
+
+
+#with giotto dataset
+
+## creat dataset
+```{r}
+dataset_seqfish <- list()
+dataset_seqfish$meta <-list()
+dataset_seqfish$meta$cell <- c(1:118)
+dataset_seqfish$meta$x  <- seqfish_mini@spatial_locs[["cell"]][["raw"]]@coordinates[["sdimx"]]
+dataset_seqfish$meta$y  <- seqfish_mini@spatial_locs[["cell"]][["raw"]]@coordinates[["sdimy"]]
+dataset_seqfish$meta$locat <- data.frame(dataset_seqfish$meta$x,dataset_seqfish$meta$y)
+colnames(dataset_seqfish$meta$locat) <-c("x","y")
+
+dataset_seqfish$meta$cell_type <- seqfish_mini@cell_metadata[["cell"]][["rna"]]@metaDT[["leiden_clus"]]
+
+
+mm<-seqfish_mini@expression[["cell"]][["rna"]][["raw"]]
+mm <-mm@exprMat
+mm<- as.matrix(mm)
+dataset_seqfish$meta$gene <-t(mm)
+
+dataset_seqfish$para$dist <- as.matrix(dist(dataset_seqfish$meta$locat))
+
+
+```
+
+
+
+
+## prepare
+```{r}
+## Weight KNN
+lr_seqfish <- get_lr_wknn(dataset_seqfish,
+        sender = 4,
+           receiver = 5,
+          k = 3)
+
+
+result_seqfish  <- SVC_model6(dataset_seqfish, lr_seqfish, 
+                          recepter = "Lrp6",
+                           ligand = "Dkk1",
+                          lambda1 = 0,
+                           lambda2 = 0)
+
+
+```
+
+```{r}
+
+cell_to_number <- c("A"=1, "B"=2, "C"=3, "D"=4, "E"=5, "F"=6, "G"=7, "H"=8)
+
+
+cell_relationships <- c(
+  "F — A", "F — C", "B — C", "G — C", "E — F", "H — C", "A — E", "E — E",
+  "E — A", "E — B", "E — D", "A — D", "B — D", "B — A", "A — A", "B — B",
+  "G — A", "C — D", "F — D", "B — E", "G — D", "C — F", "H — G", "C — G", 
+  "D — G", "G — E", "B — H", "G — B", "H — B", "A — G", "C — E"
+)
+
+
+matrix_data <- matrix(0, nrow = 31, ncol = 2)
+
+
+for (i in 1:31) {
+  cell_pair <- unlist(strsplit(cell_relationships[i], " — "))
+  matrix_data[i, 1] <- cell_to_number[cell_pair[1]]
+  matrix_data[i, 2] <- cell_to_number[cell_pair[2]]
+}
+
+dim(matrix_data)
+
+colnames(matrix_data)<- c("sender","receiver")
+```
+
+
+
+```{r}
+
+gene_relationships <- c(
+  "Dkk1-Lrp6", "Bmp2-Acvr1", "Sema4d-Pixnb2", "Omg-Lingo1",
+  "Wnt7b-Fzd10", "Wnt7b-Fzd1", "Wnt7b-Lrp5", "Nrg2-Erbb3",
+  "Jag2-Notch1", "Fgf1-Fgfr3", "Pdgfb-Pdgfrb", "Ctgf-Itgb2",
+  "Ctgf-Itgam", "Ctgf-Lrp6"
+)
+
+
+gene_data <- do.call(rbind, strsplit(gene_relationships, "-"))
+dim(gene_data)
+colnames(gene_data)<- c("ligand","receptor")
+
+```
+
+
+
+```{r}
+beta <- matrix(0, nrow = nrow(gene_data), ncol = nrow(matrix_data))
+rownames(beta) <- gene_relationships
+colnames(beta)<- cell_relationships
+
+for (i in 1:nrow(matrix_data)) {
+  for (j in 1:nrow(gene_data)) {
+    lr_seqfish <- get_lr_wknn(dataset_seqfish,
+        sender  = matrix_data[i,1],
+           receiver = matrix_data[i,2],
+          k = 3)
+    
+    
+    result_seqfish <- SVC_model8(dataset_seqfish, lr_seqfish, 
+      recepter = gene_data[j, 2],
+      ligand = gene_data[j, 1],
+      lambda1 = 0,
+      lambda2 = 0)
+
+    beta[j, i] = result_seqfish$beta[2, 1]
+    
+  }
+}
+
+myColorPalette <- colorRampPalette(c("blue", "white", "red"))(100)
+par(mar = c(2, 2, 2, 2))  
+options(repr.plot.width=8, repr.plot.height=6)  
+# Create the heatmap
+pheatmap(beta,
+         cluster_rows = FALSE,  
+         cluster_cols = FALSE, 
+         color = myColorPalette, 
+         main = "Beta Matrix Heatmap")
+
+
+##another
+color_breaks <- seq(-5, 8, length.out = 101)  # Adjust the breaks as needed
+
+# Create the heatmap with custom color breaks
+pheatmap(beta,
+         cluster_rows = FALSE,  # Do not cluster rows
+         cluster_cols = FALSE,  # Do not cluster columns
+         color = myColorPalette,  # Use the custom color palette
+         breaks = color_breaks,  # Specify the custom color breaks
+         main = "Beta Matrix Heatmap")
+```
+
+```{r}
+beta
+
+
+
+
+```
+
+
+
